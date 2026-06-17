@@ -20,9 +20,18 @@ echo "==> installing pana from $SRC for user $USER_NAME (group $GROUP)"
 
 python3 -m venv "$PREFIX"
 "$PREFIX/bin/pip" install --quiet --upgrade pip
-# editable so re-running this (or `git pull`) updates the code in place — a plain
-# `pip install "$SRC"` is a no-op when the version is unchanged, leaving stale code.
-"$PREFIX/bin/pip" install --quiet -e "$SRC"
+
+# Self-contained, NON-editable install: code is copied into /opt/pana so the daemon
+# (ProtectHome=yes) never needs /home. Build from a throwaway copy of just the build
+# inputs so we never write root-owned artifacts into the user's repo (an in-tree
+# build/ from a prior sudo run breaks every later build). --force-reinstall refreshes
+# even at an unchanged version; an editable install would break under ProtectHome=yes.
+rm -rf "$SRC/build" "$SRC/src/pana.egg-info"   # purge any root-owned leftovers
+BUILD_SRC="$(mktemp -d)"
+cp -a "$SRC/pyproject.toml" "$SRC/src" "$BUILD_SRC/"
+"$PREFIX/bin/pip" uninstall -y pana >/dev/null 2>&1 || true
+"$PREFIX/bin/pip" install --quiet --force-reinstall --no-deps "$BUILD_SRC"
+rm -rf "$BUILD_SRC"
 
 for b in pana panad pana-tray; do
     ln -sf "$PREFIX/bin/$b" "/usr/local/bin/$b"
