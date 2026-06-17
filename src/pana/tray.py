@@ -114,9 +114,6 @@ def _fetch_status(socket: str) -> dict:
 
 
 def run(socket: str = DEFAULT_SOCKET) -> None:  # pragma: no cover - GUI glue
-    import threading
-    import time
-
     import pystray
     from PIL import Image, ImageDraw
 
@@ -167,16 +164,13 @@ def run(socket: str = DEFAULT_SOCKET) -> None:  # pragma: no cover - GUI glue
         rebuild(ic)
 
     icon = pystray.Icon("pana", icon_image(), "pana", menu=build())
-
-    def poller() -> None:
-        while True:
-            time.sleep(5)
-            try:
-                rebuild(icon)
-            except Exception:
-                pass
-
-    threading.Thread(target=poller, daemon=True).start()
+    # NO background timer: rebuilding/refreshing the menu while it's open collapses
+    # any open submenu on GNOME's AppIndicator (the "blink" that kicked you out).
+    # The menu refreshes only on a click (when it's already closed) or via "Refresh".
+    try:
+        icon.title = _title(cache["status"])
+    except Exception:
+        pass
     icon.run()
 
 
