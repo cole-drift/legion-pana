@@ -18,20 +18,30 @@ PREFIX=/opt/pana
 
 echo "==> installing pana from $SRC for user $USER_NAME (group $GROUP)"
 
-python3 -m venv "$PREFIX"
+# Recreate the venv with --system-site-packages so the tray can reach the system
+# PyGObject (gi); pystray's GNOME (AppIndicator) backend needs it, and a venv-pip
+# PyGObject build is fragile. Harmless for the daemon (it only imports stdlib + pana).
+rm -rf "$PREFIX"
+python3 -m venv --system-site-packages "$PREFIX"
 "$PREFIX/bin/pip" install --quiet --upgrade pip
 
 # Self-contained, NON-editable install: code is copied into /opt/pana so the daemon
 # (ProtectHome=yes) never needs /home. Build from a throwaway copy of just the build
 # inputs so we never write root-owned artifacts into the user's repo (an in-tree
-# build/ from a prior sudo run breaks every later build). --force-reinstall refreshes
-# even at an unchanged version; an editable install would break under ProtectHome=yes.
+# build/ from a prior sudo run breaks every later build).
 rm -rf "$SRC/build" "$SRC/src/pana.egg-info"   # purge any root-owned leftovers
 BUILD_SRC="$(mktemp -d)"
 cp -a "$SRC/pyproject.toml" "$SRC/src" "$BUILD_SRC/"
-"$PREFIX/bin/pip" uninstall -y pana >/dev/null 2>&1 || true
 "$PREFIX/bin/pip" install --quiet --force-reinstall --no-deps "$BUILD_SRC"
 rm -rf "$BUILD_SRC"
+
+# Tray dependencies (best-effort: a headless/offline box still gets the daemon).
+"$PREFIX/bin/pip" install --quiet pystray Pillow || echo "WARN: tray deps (pystray/Pillow) not installed"
+# AppIndicator GIR typelib — without it pystray falls back to a backend GNOME won't show.
+if command -v apt-get >/dev/null; then
+    DEBIAN_FRONTEND=noninteractive apt-get install -y gir1.2-ayatanaappindicator3-0.1 >/dev/null 2>&1 \
+        || echo "WARN: could not install gir1.2-ayatanaappindicator3-0.1 (tray icon may not appear)"
+fi
 
 for b in pana panad pana-tray; do
     ln -sf "$PREFIX/bin/$b" "/usr/local/bin/$b"
@@ -53,5 +63,13 @@ systemctl enable panad.service
 # already-running daemon; restart also starts it if it was stopped.
 systemctl restart panad.service
 
+# Enable + (re)start the per-user tray service so it picks up the new code/venv.
+USER_UID="$(id -u "$USER_NAME")"
+RUNTIME_DIR="/run/user/$USER_UID"
+if [[ -d "$RUNTIME_DIR" ]]; then
+    sudo -u "$USER_NAME" XDG_RUNTIME_DIR="$RUNTIME_DIR" systemctl --user enable pana-tray.service 2>/dev/null || true
+    sudo -u "$USER_NAME" XDG_RUNTIME_DIR="$RUNTIME_DIR" systemctl --user restart pana-tray.service 2>/dev/null || true
+fi
+
 echo "==> done. Try:  pana status   (no sudo needed)"
-echo "    Optional tray:  sudo $PREFIX/bin/pip install pystray Pillow && systemctl --user enable --now pana-tray"
+echo "    Tray icon (purple dot, top-right) manages everything. If it's missing, log out/in once."
