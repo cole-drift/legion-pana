@@ -10,6 +10,7 @@ fi
 
 systemctl disable --now panad.service 2>/dev/null || true
 rm -f /etc/systemd/system/panad.service
+rm -f /etc/systemd/user/pana-tray.service
 rm -f /usr/lib/systemd/system-sleep/pana
 systemctl daemon-reload
 

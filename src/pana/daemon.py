@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import concurrent.futures
 import os
 import signal
 from datetime import datetime, time
 from typing import Callable
+
+# Upper bound on any single hardware op (sysfs/HID). A wedged ioctl returns an
+# error to the caller instead of hanging the daemon.
+HW_OP_TIMEOUT_S = 10.0
 
 from .core import scheduler
 from .core.config import Config, State
@@ -58,7 +63,13 @@ class Daemon:
         self.socket_path = socket_path
         self._stop = asyncio.Event()
         self._last_light_state: str | None = None
+        self._last_night: bool | None = None
         self._last_ac: bool | None = None
+        # Single worker so all hardware access (commands + loops) stays serialized
+        # off the event loop; a blocking ioctl can't stall IPC or the watchers.
+        self._hw_exec = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="pana-hw"
+        )
         self._handlers: dict[str, Callable[[dict], dict]] = {
             "ping": lambda a: {"pong": True},
             "status": self._h_status,
@@ -91,8 +102,14 @@ class Daemon:
         fn = self._handlers.get(req.cmd)
         if fn is None:
             return Response(ok=False, error=f"unknown command: {req.cmd}")
+        loop = asyncio.get_running_loop()
         try:
-            return Response(ok=True, data=fn(req.args))
+            data = await asyncio.wait_for(
+                loop.run_in_executor(self._hw_exec, fn, req.args), timeout=HW_OP_TIMEOUT_S
+            )
+            return Response(ok=True, data=data)
+        except asyncio.TimeoutError:
+            return Response(ok=False, error="hardware operation timed out")
         except Exception as exc:
             return Response(ok=False, error=f"{type(exc).__name__}: {exc}")
 
@@ -100,6 +117,18 @@ class Daemon:
 
     def _scheduler_tick(self, now_t: time | None = None) -> str | None:
         now_t = now_t or datetime.now().time()
+        # Clear a manual override when we cross a day/night boundary, so manual
+        # toggles last only until the next boundary (spec §4).
+        night_now = scheduler.is_night(
+            now_t, self.manager.config.night_start, self.manager.config.night_end
+        )
+        if (
+            self._last_night is not None
+            and night_now != self._last_night
+            and self.manager.state.lights_manual is not None
+        ):
+            self.manager.set_night(clear_manual=True)
+        self._last_night = night_now
         desired = scheduler.desired_lights(
             now_t,
             self.manager.night_enabled(),
@@ -142,10 +171,13 @@ class Daemon:
             pass
 
     async def _every(self, interval: float, fn: Callable[[], None]) -> None:
+        loop = asyncio.get_running_loop()
         while not self._stop.is_set():
             try:
-                fn()
-            except Exception:
+                await asyncio.wait_for(
+                    loop.run_in_executor(self._hw_exec, fn), timeout=HW_OP_TIMEOUT_S
+                )
+            except Exception:  # incl. timeout / transient hardware hiccup
                 pass
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
@@ -184,7 +216,7 @@ class Daemon:
         tasks = [
             asyncio.create_task(server.serve_forever()),
             asyncio.create_task(self._every(self.manager.config.monitor_interval_s, self._monitor_tick)),
-            asyncio.create_task(self.battery_watcher.run(self._stop)),
+            asyncio.create_task(self._every(self.manager.config.poll_interval_s, self.battery_watcher.tick)),
             asyncio.create_task(self._every(self.manager.config.poll_interval_s, self._scheduler_tick)),
         ]
         try:
@@ -192,7 +224,10 @@ class Daemon:
         finally:
             for t in tasks:
                 t.cancel()
+            # drain cancellations so coroutines unwind before we close the server
+            await asyncio.gather(*tasks, return_exceptions=True)
             await server.stop()
+            self._hw_exec.shutdown(wait=False)
 
 
 def main() -> None:

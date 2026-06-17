@@ -47,7 +47,8 @@ A malformed request line never drops the connection — it returns `ok:false`.
   "platform_profile": "low-power",
   "profile_choices": ["low-power", "balanced", "balanced-performance", "performance", "custom"],
   "ppt": {"ppt_pl1_spl": 0, "ppt_pl2_sppt": 0, "ppt_pl3_fppt": 0},
-  "battery": {"conservation": false, "soft_target": null, "capacity": 65, "status": "Charging", "ac_online": true},
+  "battery": {"conservation": false, "soft_target": null, "capacity": 65, "status": "Charging", "ac_online": true,
+              "reverts_to_charging_if_daemon_stops": true, "firmware_cap_floor": true, "soft_target_note": null},
   "lights": {"available": true, "manual": null, "night_enabled": false},
   "monitor": {"cpu_power_w": 12.3, "cpu_temp_c": 63.0, "nvme_temps_c": [35.8], "battery": {...}, "ac_online": true, "cpu_freq_mhz": {"avg": 4110.4, "max": 5200.0}},
   "capabilities": {"power_modes": true, "ppt": true, "battery_conservation": true, ...}

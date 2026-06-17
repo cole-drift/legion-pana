@@ -119,6 +119,14 @@ def test_power_transition_reapplies_on_change():
     assert daemon._check_power_transition() is None         # unchanged
 
 
+def test_scheduler_clears_manual_override_at_boundary():
+    daemon = _daemon(config=Config(night_enabled=True, night_start="20:00", night_end="07:00"))
+    daemon.manager.state.lights_manual = "on"
+    assert daemon._scheduler_tick(now_t=time(23, 0)) == "on"   # night: manual honored
+    daemon._scheduler_tick(now_t=time(8, 0))                    # crosses into day
+    assert daemon.manager.state.lights_manual is None           # override cleared at boundary
+
+
 def test_power_transition_auto_on_battery_rule():
     daemon = _daemon(config=Config(auto_on_battery="eco"))
     daemon.manager.fs._files["/sys/class/power_supply/ADP0/online"] = "0"

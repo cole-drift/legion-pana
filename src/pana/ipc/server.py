@@ -25,12 +25,12 @@ class Server:
     ) -> None:
         try:
             async for raw in reader:
-                line = raw.decode().strip()
-                if not line:
-                    continue
                 try:
+                    line = raw.decode().strip()  # bad bytes / bad json must not drop the conn
+                    if not line:
+                        continue
                     resp = await self.handler(Request.from_json(line))
-                except Exception as exc:  # bad request must not kill the connection
+                except Exception as exc:
                     resp = Response(ok=False, error=str(exc))
                 writer.write((resp.to_json() + "\n").encode())
                 await writer.drain()

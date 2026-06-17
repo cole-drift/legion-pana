@@ -33,10 +33,11 @@ fi
 
 sed "s/@GROUP@/$GROUP/" "$SRC/packaging/panad.service.in" > /etc/systemd/system/panad.service
 install -m755 "$SRC/packaging/pana-sleep-hook.sh" /usr/lib/systemd/system-sleep/pana
+install -d -m755 /etc/systemd/user
+install -m644 "$SRC/packaging/pana-tray.service" /etc/systemd/user/pana-tray.service
 
 systemctl daemon-reload
 systemctl enable --now panad.service
 
 echo "==> done. Try:  pana status   (no sudo needed)"
-echo "    Optional tray:  sudo $PREFIX/bin/pip install pystray Pillow"
-echo "                    systemctl --user enable --now pana-tray   # after copying the user unit"
+echo "    Optional tray:  sudo $PREFIX/bin/pip install pystray Pillow && systemctl --user enable --now pana-tray"

@@ -87,6 +87,38 @@ def test_status_shape():
     assert set(st["ppt"]) == {"ppt_pl1_spl", "ppt_pl2_sppt"}
 
 
+def test_lights_on_honors_explicit_brightness():
+    fs = _fs()
+    dev = FakeHid({OP_GET_BRIGHTNESS: bytes([0x07, 0, 0, 0, 5])})
+    m = Manager(fs=fs, lights_opener=lambda p: dev, config=Config(light_on_brightness=3))
+    m.set_lights(on=True, brightness=7)
+    # explicit 7 wins over the config default of 3
+    assert dev.sent[-1][:5] == bytes([0x07, 0xCE, 0xC0, 0x03, 7])
+
+
+def test_apply_preset_unsettable_ppt_raises_before_custom():
+    import pytest
+
+    from pana.core.presets import Preset
+
+    fs = _fs()
+    m = Manager(fs=fs, lights_opener=_opener()[0])
+    with pytest.raises(ValueError):
+        m._apply_preset(Preset(name="x", platform_profile="custom", ppt={"ppt_pl3_fppt": 100}))
+    # must NOT have entered custom mode with a partial limit
+    assert fs.read(d.PLATFORM_PROFILE) == "performance"
+
+
+def test_status_battery_honesty_fields():
+    m = _manager()
+    st = m.status()["battery"]
+    assert st["firmware_cap_floor"] is True
+    assert st["reverts_to_charging_if_daemon_stops"] is True
+    assert st["soft_target_note"] is None
+    m.set_battery(target=85)
+    assert m.status()["battery"]["soft_target_note"] is not None
+
+
 def test_night_enabled_inherits_config_then_state_override():
     opener = _opener()[0]
     m = Manager(fs=_fs(), lights_opener=opener, config=Config(night_enabled=True))

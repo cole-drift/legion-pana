@@ -67,6 +67,9 @@ class Sensors:
     def rapl_energy_uj(self) -> int | None:
         return self._read_int(RAPL_ENERGY)
 
+    def rapl_max_range_uj(self) -> int | None:
+        return self._read_int(RAPL_MAX_RANGE)
+
     @staticmethod
     def rapl_power_w(e0_uj: int, e1_uj: int, dt_s: float, wrap_uj: int | None = None) -> float:
         delta = e1_uj - e0_uj

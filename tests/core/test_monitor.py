@@ -2,13 +2,17 @@ from pana.core.monitor import Monitor
 
 
 class _FakeSensors:
-    def __init__(self, energies):
+    def __init__(self, energies, wrap=None):
         self._energies = list(energies)
         self._i = -1
+        self._wrap = wrap
 
     def rapl_energy_uj(self):
         self._i += 1
         return self._energies[self._i]
+
+    def rapl_max_range_uj(self):
+        return self._wrap
 
     def cpu_package_temp_c(self):
         return 52.0
@@ -37,6 +41,18 @@ def test_first_sample_has_no_power_second_computes():
 
     second = mon.sample()
     assert second["cpu_power_w"] == 10.0
+
+
+def test_counter_wrap_yields_positive_power():
+    # second energy reading is below the first (counter rolled over); with the
+    # max-range known, power must come out positive, not negative.
+    wrap = 10_000_000
+    clock_vals = iter([0.0, 1.0])
+    sensors = _FakeSensors([9_500_000, 1_000_000], wrap=wrap)
+    mon = Monitor(sensors, clock=lambda: next(clock_vals))
+    mon.sample()  # primes last_e
+    second = mon.sample()
+    assert second["cpu_power_w"] == 1.5  # (1_000_000 - 9_500_000 + 10_000_000)/1e6 / 1s
 
 
 def test_history_bounded():

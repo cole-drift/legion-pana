@@ -60,6 +60,11 @@ class Manager:
 
     def _apply_preset(self, p: Preset) -> None:
         if p.ppt:
+            # validate every limit BEFORE switching to custom, so a bad attr can't
+            # strand the machine in custom mode with a partially-applied limit.
+            bad = [a for a in p.ppt if not self.ppt.settable(a)]
+            if bad:
+                raise ValueError(f"ppt attrs not settable on this machine: {bad}")
             self.profile.set("custom")
             for attr, watts in p.ppt.items():
                 self.ppt.set(attr, watts)
@@ -125,14 +130,17 @@ class Manager:
             raise RuntimeError("no lighting device available")
         if color is not None:
             self.lights.color(color)
-        if brightness is not None:
-            self.lights.set_brightness(brightness)
         if on is True:
-            self.lights.set_brightness(self.config.light_on_brightness)
+            # an explicit brightness on this invocation wins over the config default
+            self.lights.set_brightness(
+                brightness if brightness is not None else self.config.light_on_brightness
+            )
             self.state.lights_manual = "on"
         elif on is False:
             self.lights.off()
             self.state.lights_manual = "off"
+        elif brightness is not None:
+            self.lights.set_brightness(brightness)
         self._persist()
         return self.status()
 
@@ -163,6 +171,16 @@ class Manager:
                 "capacity": self.battery.capacity(),
                 "status": self.battery.status(),
                 "ac_online": self.battery.ac_online(),
+                # honesty disclosure (spec §4): the soft target is software-enforced
+                # and cannot brake below the firmware conservation cap (~60-80%).
+                "reverts_to_charging_if_daemon_stops": True,
+                "firmware_cap_floor": True,
+                "soft_target_note": (
+                    "held in software; reverts to charging if the daemon stops; "
+                    "cannot hold below the firmware conservation cap (~60-80%)"
+                )
+                if self.state.battery_target is not None
+                else None,
             },
             "lights": {
                 "available": self.lights.available(),

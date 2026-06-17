@@ -16,13 +16,15 @@ class Monitor:
         self.history: collections.deque[dict] = collections.deque(maxlen=maxlen)
         self._last_e: int | None = None
         self._last_t: float | None = None
+        # RAPL energy counter wraps at this value; static, read once. None if unreadable.
+        self._wrap = sensors.rapl_max_range_uj()
 
     def sample(self) -> dict:
         now = self.clock()
         energy = self.sensors.rapl_energy_uj()
         power = None
         if energy is not None and self._last_e is not None and self._last_t is not None:
-            power = Sensors.rapl_power_w(self._last_e, energy, now - self._last_t)
+            power = Sensors.rapl_power_w(self._last_e, energy, now - self._last_t, wrap_uj=self._wrap)
         self._last_e, self._last_t = energy, now
 
         snap = {
