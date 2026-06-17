@@ -185,17 +185,24 @@ class Daemon:
                 pass
 
     def _secure_socket(self) -> None:
-        try:
-            os.chmod(self.socket_path, 0o660)
-        except OSError:
-            pass
+        # Defensively fix ownership/mode of BOTH the runtime dir and the socket so a
+        # group member can traverse + connect, independent of systemd directive support.
+        gid = -1
         group = os.environ.get("PANA_SOCKET_GROUP")
         if group:
             try:
                 import grp
 
-                os.chown(self.socket_path, -1, grp.getgrnam(group).gr_gid)
-            except (OSError, KeyError):
+                gid = grp.getgrnam(group).gr_gid
+            except KeyError:
+                gid = -1
+        sockdir = os.path.dirname(self.socket_path)
+        for path, mode in ((sockdir, 0o750), (self.socket_path, 0o660)):
+            try:
+                if gid != -1:
+                    os.chown(path, -1, gid)
+                os.chmod(path, mode)
+            except OSError:
                 pass
 
     async def run(self) -> None:

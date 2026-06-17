@@ -9,8 +9,10 @@ ExecStart=/opt/pana/bin/panad --socket /run/pana/pana.sock
 Environment=PANA_SOCKET_GROUP=@GROUP@
 RuntimeDirectory=pana
 RuntimeDirectoryMode=0750
-# group-own /run/pana so the installing user can traverse to the socket (no sudo)
-RuntimeDirectoryGroup=@GROUP@
+# Run as uid 0 (no User=) but gid = the install group, so RuntimeDirectory and the
+# socket are group-owned and the user can reach them without sudo. root still writes
+# sysfs/hidraw. (There is no RuntimeDirectoryGroup= directive; Group= is the way.)
+Group=@GROUP@
 Restart=on-failure
 RestartSec=2
 
