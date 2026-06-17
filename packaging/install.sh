@@ -37,11 +37,24 @@ rm -rf "$BUILD_SRC"
 
 # Tray dependencies (best-effort: a headless/offline box still gets the daemon).
 "$PREFIX/bin/pip" install --quiet pystray Pillow || echo "WARN: tray deps (pystray/Pillow) not installed"
-# AppIndicator GIR typelib — without it pystray falls back to a backend GNOME won't show.
-if command -v apt-get >/dev/null; then
-    DEBIAN_FRONTEND=noninteractive apt-get install -y gir1.2-ayatanaappindicator3-0.1 >/dev/null 2>&1 \
-        || echo "WARN: could not install gir1.2-ayatanaappindicator3-0.1 (tray icon may not appear)"
-fi
+# System deps the tray needs: PyGObject (so the venv's --system-site-packages can import
+# gi) + the AppIndicator GIR typelib (without it pystray falls back to a backend GNOME
+# won't render). Package names vary by distro — best-effort across the major families.
+install_tray_sysdeps() {
+    if command -v apt-get >/dev/null; then
+        DEBIAN_FRONTEND=noninteractive apt-get install -y python3-gi gir1.2-ayatanaappindicator3-0.1
+    elif command -v dnf >/dev/null; then
+        dnf install -y python3-gobject libayatana-appindicator-gtk3
+    elif command -v pacman >/dev/null; then
+        pacman -S --needed --noconfirm python-gobject libayatana-appindicator
+    elif command -v zypper >/dev/null; then
+        zypper --non-interactive install python3-gobject typelib-1_0-AyatanaAppIndicator3-0_1
+    else
+        echo "WARN: unknown package manager — install PyGObject + the AppIndicator GIR manually"
+        return 0
+    fi
+}
+install_tray_sysdeps >/dev/null 2>&1 || echo "WARN: tray system deps not installed (icon may not appear; daemon/CLI unaffected)"
 
 for b in pana panad pana-tray; do
     ln -sf "$PREFIX/bin/$b" "/usr/local/bin/$b"

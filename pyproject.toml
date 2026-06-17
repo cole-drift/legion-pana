@@ -1,8 +1,23 @@
 [project]
 name = "pana"
-version = "0.1.0"
-description = "Lenovo Legion 7 16IAX10 control + monitoring tool"
+version = "1.0.0"
+description = "Lenovo Legion 7 16IAX10 control + monitoring tool (CPU power, battery, lighting)"
+readme = "README.md"
 requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Cole Miller", email = "cole@godrift.ai" }]
+keywords = ["lenovo", "legion", "16iax10", "cpu", "power", "battery", "rgb", "cooling", "linux"]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Hardware",
+]
+
+[project.urls]
+Repository = "https://github.com/cole-drift/legion-pana"
 
 [project.scripts]
 pana = "pana.cli:main"
