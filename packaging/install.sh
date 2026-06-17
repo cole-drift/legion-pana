@@ -54,8 +54,6 @@ fi
 
 sed "s/@GROUP@/$GROUP/" "$SRC/packaging/panad.service.in" > /etc/systemd/system/panad.service
 install -m755 "$SRC/packaging/pana-sleep-hook.sh" /usr/lib/systemd/system-sleep/pana
-install -d -m755 /etc/systemd/user
-install -m644 "$SRC/packaging/pana-tray.service" /etc/systemd/user/pana-tray.service
 
 systemctl daemon-reload
 systemctl enable panad.service
@@ -63,13 +61,18 @@ systemctl enable panad.service
 # already-running daemon; restart also starts it if it was stopped.
 systemctl restart panad.service
 
-# Enable + (re)start the per-user tray service so it picks up the new code/venv.
+# Tray: a .desktop launcher (Super-key search) + autostart on login for every user.
+# (A freedesktop autostart entry is more reliable than `systemctl --user enable` and
+# avoids the per-session XDG_RUNTIME_DIR dance.)
+install -d -m755 /usr/share/applications /etc/xdg/autostart
+install -m644 "$SRC/packaging/pana.desktop" /usr/share/applications/pana.desktop
+install -m644 "$SRC/packaging/pana.desktop" /etc/xdg/autostart/pana.desktop
+update-desktop-database /usr/share/applications 2>/dev/null || true
+# launch the tray now for the installing user (best-effort; it autostarts next login)
 USER_UID="$(id -u "$USER_NAME")"
-RUNTIME_DIR="/run/user/$USER_UID"
-if [[ -d "$RUNTIME_DIR" ]]; then
-    sudo -u "$USER_NAME" XDG_RUNTIME_DIR="$RUNTIME_DIR" systemctl --user enable pana-tray.service 2>/dev/null || true
-    sudo -u "$USER_NAME" XDG_RUNTIME_DIR="$RUNTIME_DIR" systemctl --user restart pana-tray.service 2>/dev/null || true
+if [[ -d "/run/user/$USER_UID" ]]; then
+    sudo -u "$USER_NAME" DISPLAY=:0 XDG_RUNTIME_DIR="/run/user/$USER_UID" \
+        nohup /usr/local/bin/pana-tray >/dev/null 2>&1 &
 fi
 
-echo "==> done. Try:  pana status   (no sudo needed)"
-echo "    Tray icon (purple dot, top-right) manages everything. If it's missing, log out/in once."
+echo "==> done. 'pana status' (no sudo). Tray autostarts on login; or press Super and type 'pana'."

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Pana
+GenericName=Legion control & monitoring
+Comment=CPU power mode, battery limit, keyboard lighting, live temps
+Exec=/usr/local/bin/pana-tray
+Icon=computer
+Terminal=false
+Categories=System;Settings;Utility;
+Keywords=pana;legion;cpu;power;mode;eco;battery;charge;lighting;rgb;cooling;thermal;fan;monitor;
+StartupNotify=false
