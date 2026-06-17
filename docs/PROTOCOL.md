@@ -34,7 +34,7 @@ A malformed request line never drops the connection — it returns `ok:false`.
 | `monitor` | — | `{"sample": <telemetry|null>}` (latest rolling sample) |
 | `reapply` | — | re-applies persisted desired state; returns status |
 | `mode` | `{"name": "eco"\|"balanced"\|"game"}` | apply a preset; returns status |
-| `tdp` | `{"pl1"?: int, "pl2"?: int}` | enter custom profile, set clamped CPU limits |
+| `power` | `{"pct": int}` | custom CPU clock-ceiling cap (intel_pstate max_perf_pct, 10-100) |
 | `battery` | `{"cap": true}` \| `{"target": int}` \| `{"off": true}` | conservation cap / soft target / charge-to-100 |
 | `lights` | `{"on"?: bool, "brightness"?: 0-9, "color"?: [r,g,b]}` | control keyboard lighting |
 | `night` | `{"enabled"?: bool, "clear"?: bool}` | toggle the night schedule / clear manual override |
@@ -46,7 +46,7 @@ A malformed request line never drops the connection — it returns `ok:false`.
   "mode": "eco",
   "platform_profile": "low-power",
   "profile_choices": ["low-power", "balanced", "balanced-performance", "performance", "custom"],
-  "ppt": {"ppt_pl1_spl": 0, "ppt_pl2_sppt": 0, "ppt_pl3_fppt": 0},
+  "cpu_cap": {"available": true, "max_perf_pct": 100, "desired_pct": null},
   "battery": {"conservation": false, "soft_target": null, "capacity": 65, "status": "Charging", "ac_online": true,
               "reverts_to_charging_if_daemon_stops": true, "firmware_cap_floor": true, "soft_target_note": null},
   "lights": {"available": true, "manual": null, "night_enabled": false},

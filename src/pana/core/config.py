@@ -16,12 +16,9 @@ class Config:
     default_mode: str = "balanced"
     battery_target: int | None = None  # soft target %; None = no soft target
     light_on_brightness: int = 3
-    # eco mode's RAPL power cap (the real cooling lever on this machine, in watts)
-    eco_pl1_w: float = 45.0
-    eco_pl2_w: float = 60.0
-    # the stock/uncapped limits restored for balanced/game (this machine's defaults)
-    uncap_pl1_w: float = 115.0
-    uncap_pl2_w: float = 168.0
+    # eco mode's CPU clock-ceiling cap, as intel_pstate max_perf_pct (1-100). The
+    # cooling lever that works on this machine (RAPL/ppt power limits are firmware-locked).
+    eco_max_perf_pct: int = 55
     night_enabled: bool = False
     night_start: str = "20:00"
     night_end: str = "07:00"
@@ -59,8 +56,7 @@ class State:
     battery_target: int | None = None
     lights_manual: str | None = None  # "on"|"off" manual override of the schedule
     night_enabled: bool | None = None  # None = inherit Config.night_enabled
-    custom_pl1: float | None = None  # RAPL caps for "custom" mode (pana tdp)
-    custom_pl2: float | None = None
+    custom_max_pct: int | None = None  # clock-ceiling cap for "custom" mode (pana power)
 
     def to_json(self) -> str:
         return json.dumps(asdict(self))

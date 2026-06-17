@@ -76,7 +76,7 @@ class Daemon:
             "reapply": lambda a: (self.manager.reapply(), self.manager.status())[1],
             "monitor": lambda a: {"sample": self.monitor.latest()},
             "mode": lambda a: self.manager.apply_mode(a["name"]),
-            "tdp": lambda a: self.manager.set_tdp(a.get("pl1"), a.get("pl2")),
+            "power": lambda a: self.manager.set_power(a["pct"]),
             "battery": lambda a: self.manager.set_battery(
                 cap=a.get("cap", False), target=a.get("target"), off=a.get("off", False)
             ),
@@ -170,7 +170,7 @@ class Daemon:
         except Exception:
             pass
         try:
-            self.manager.enforce_rapl()  # hold an active cap against thermald resets
+            self.manager.enforce_cap()  # hold an active clock cap against thermald resets
         except Exception:
             pass
 

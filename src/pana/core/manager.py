@@ -3,10 +3,10 @@ from __future__ import annotations
 from typing import Callable
 
 from ..hw.battery import Battery
+from ..hw.cpufreq import CpuFreq
 from ..hw.hid import HidTransport, RealHid
 from ..hw.lights import Lights
 from ..hw.platform_profile import PlatformProfile
-from ..hw.rapl import Rapl
 from ..hw.sensors import Sensors
 from ..hw.transport import RealSysfs, Sysfs
 from .config import Config, State
@@ -37,15 +37,15 @@ class Manager:
     ):
         self.fs = fs or RealSysfs()
         self.profile = PlatformProfile(self.fs)
-        self.rapl = Rapl(self.fs)
+        self.cpufreq = CpuFreq(self.fs)
         self.battery = Battery(self.fs)
         self.sensors = Sensors(self.fs)
         self.lights = Lights(self.fs, lights_opener or (lambda path: RealHid(path)))
         self.config = config or Config()
         self.state = state or State()
         self.presets = presets or default_presets()
-        # RAPL caps we want held (against thermald resets); None = don't enforce.
-        self._desired_rapl: dict | None = None
+        # clock-ceiling cap we want held (against thermald raising it); None = don't enforce.
+        self._desired_pct: int | None = None
         if self.state.battery_target is None:
             self.state.battery_target = self.config.battery_target
         if self.state.mode is None:
@@ -64,16 +64,15 @@ class Manager:
         # platform_profile is cosmetic on this firmware (sets the power-button color
         # but does NOT change power limits), so a hiccup here must not block the cap.
         _safe(lambda: self.profile.set(p.platform_profile))
-        # the actual cooling lever: Intel RAPL package power cap.
-        if self.rapl.available():
-            if p.rapl_cap:
-                self.rapl.set_pl1_w(self.config.eco_pl1_w)
-                self.rapl.set_pl2_w(self.config.eco_pl2_w)
-                self._desired_rapl = {"pl1": self.config.eco_pl1_w, "pl2": self.config.eco_pl2_w}
+        # the actual cooling lever: intel_pstate clock-ceiling cap.
+        if self.cpufreq.available():
+            if p.eco_cap:
+                pct = self.config.eco_max_perf_pct
+                self.cpufreq.set_max_pct(pct)
+                self._desired_pct = pct
             else:
-                self.rapl.set_pl1_w(self.config.uncap_pl1_w)
-                self.rapl.set_pl2_w(self.config.uncap_pl2_w)
-                self._desired_rapl = None  # uncapped: let thermald manage, don't enforce
+                self.cpufreq.set_max_pct(100)
+                self._desired_pct = None  # uncapped: don't enforce
         if p.battery == "cap":
             self.battery.set_conservation(True)
         elif p.battery == "off":
@@ -98,37 +97,28 @@ class Manager:
         self._persist()
         return self.status()
 
-    def set_tdp(self, pl1: int | None = None, pl2: int | None = None) -> dict:
-        if pl1 is None and pl2 is None:
-            raise ValueError("set_tdp needs at least one of pl1, pl2")
-        if not self.rapl.available():
-            raise RuntimeError("RAPL power-cap not available on this machine")
-        desired = dict(self._desired_rapl or {})
-        if pl1 is not None:
-            desired["pl1"] = self.rapl.set_pl1_w(pl1)
-        if pl2 is not None:
-            desired["pl2"] = self.rapl.set_pl2_w(pl2)
-        self._desired_rapl = desired
+    def set_power(self, pct: int) -> dict:
+        """Set a custom CPU clock-ceiling cap (intel_pstate max_perf_pct, 10-100)."""
+        if not self.cpufreq.available():
+            raise RuntimeError("CPU clock cap not available on this machine")
+        applied = self.cpufreq.set_max_pct(pct)
+        self._desired_pct = applied if applied < 100 else None
         self.state.mode = "custom"
-        self.state.custom_pl1 = desired.get("pl1")
-        self.state.custom_pl2 = desired.get("pl2")
+        self.state.custom_max_pct = applied
         self._persist()
         return self.status()
 
-    def enforce_rapl(self) -> None:
-        """Re-assert an active cap if thermald (or anything) raised the limit back up.
+    def enforce_cap(self) -> None:
+        """Re-assert an active clock cap if something raised the ceiling back up.
 
-        Only pushes the limit DOWN to the desired cap — never fights thermald when it
-        lowers the limit for thermal safety.
+        Only pushes the ceiling DOWN to the desired cap — never fights thermald when it
+        lowers the ceiling for thermal safety.
         """
-        if not self._desired_rapl or not self.rapl.available():
+        if self._desired_pct is None or not self.cpufreq.available():
             return
-        cur = self.rapl.get_limits_w()
-        for key, setter in (("pl1", self.rapl.set_pl1_w), ("pl2", self.rapl.set_pl2_w)):
-            want = self._desired_rapl.get(key)
-            have = cur.get(key)
-            if want and have and have > want + 0.5:
-                _safe(lambda s=setter, w=want: s(w))
+        cur = self.cpufreq.get_max_pct()
+        if cur is not None and cur > self._desired_pct:
+            _safe(lambda: self.cpufreq.set_max_pct(self._desired_pct))
 
     def set_battery(
         self, *, cap: bool = False, target: int | None = None, off: bool = False
@@ -183,13 +173,9 @@ class Manager:
     def reapply(self) -> None:
         """Re-apply persisted desired state (boot / resume / AC change)."""
         if self.state.mode == "custom":
-            if self.rapl.available():
-                desired: dict = {}
-                if self.state.custom_pl1:
-                    desired["pl1"] = _safe(lambda: self.rapl.set_pl1_w(self.state.custom_pl1))
-                if self.state.custom_pl2:
-                    desired["pl2"] = _safe(lambda: self.rapl.set_pl2_w(self.state.custom_pl2))
-                self._desired_rapl = {k: v for k, v in desired.items() if v} or None
+            if self.cpufreq.available() and self.state.custom_max_pct:
+                applied = _safe(lambda: self.cpufreq.set_max_pct(self.state.custom_max_pct))
+                self._desired_pct = applied if applied and applied < 100 else None
         elif self.state.mode:
             _safe(lambda: self._apply_preset(self.presets[self.state.mode]))
 
@@ -200,10 +186,10 @@ class Manager:
             "mode": self.state.mode,
             "platform_profile": _safe(self.profile.get) if self.profile.available() else None,
             "profile_choices": self.profile.choices(),
-            "rapl": {
-                "available": self.rapl.available(),
-                "limits_w": self.rapl.get_limits_w() if self.rapl.available() else None,
-                "desired_w": self._desired_rapl,
+            "cpu_cap": {
+                "available": self.cpufreq.available(),
+                "max_perf_pct": self.cpufreq.get_max_pct() if self.cpufreq.available() else None,
+                "desired_pct": self._desired_pct,
             },
             "battery": {
                 "conservation": self.battery.conservation(),

@@ -4,8 +4,8 @@ from datetime import time
 from pana.core.config import Config, State
 from pana.daemon import Daemon
 from pana.hw import detect as d
+from pana.hw.cpufreq import MAX_PERF_PCT
 from pana.hw.hid import FakeHid
-from pana.hw.rapl import PL1, PL2, PL1_MAX
 from pana.hw.spectrum import OP_GET_BRIGHTNESS
 from pana.hw.transport import FakeSysfs
 from pana.ipc.protocol import Request
@@ -18,10 +18,7 @@ def _fs() -> FakeSysfs:
         d.CONSERVATION: "0",
         "/sys/class/power_supply/BAT0/capacity": "38",
         "/sys/class/hidraw/hidraw4/device/uevent": "HID_ID=0003:0000048D:0000C197\n",
-        "/sys/class/powercap/intel-rapl:0/name": "package-0",
-        PL1: "115000000",
-        PL2: "168000000",
-        PL1_MAX: "120000000",
+        MAX_PERF_PCT: "100",
     })
 
 
@@ -60,11 +57,11 @@ def test_mode_command_applies():
     assert daemon.manager.fs.read(d.PLATFORM_PROFILE) == "low-power"
 
 
-def test_tdp_command_caps_rapl():
+def test_power_command_caps_clock():
     daemon = _daemon()
-    resp = _call(daemon, "tdp", pl1=40)
+    resp = _call(daemon, "power", pct=40)
     assert resp.ok
-    assert daemon.manager.fs.read(PL1) == "40000000"
+    assert daemon.manager.fs.read(MAX_PERF_PCT) == "40"
     assert resp.data["mode"] == "custom"
 
 

@@ -25,15 +25,8 @@ def _build_request(args: argparse.Namespace) -> Request:
         return Request(cmd=c)
     if c == "mode":
         return Request(cmd="mode", args={"name": args.name})
-    if c == "tdp":
-        a: dict = {}
-        if args.pl1 is not None:
-            a["pl1"] = args.pl1
-        if args.pl2 is not None:
-            a["pl2"] = args.pl2
-        if not a:
-            raise SystemExit("tdp needs --pl1 and/or --pl2")
-        return Request(cmd="tdp", args=a)
+    if c == "power":
+        return Request(cmd="power", args={"pct": args.pct})
     if c == "battery":
         if args.off:
             return Request(cmd="battery", args={"off": True})
@@ -97,9 +90,8 @@ def _parser() -> argparse.ArgumentParser:
     mon.add_argument("--interval", type=float, default=2.0)
     m = sub.add_parser("mode")
     m.add_argument("name", help="eco | balanced | game | <custom preset>")
-    t = sub.add_parser("tdp")
-    t.add_argument("--pl1", type=int, help="sustained CPU power cap in watts (RAPL PL1)")
-    t.add_argument("--pl2", type=int, help="boost CPU power cap in watts (RAPL PL2)")
+    pw = sub.add_parser("power", help="custom CPU clock-ceiling cap")
+    pw.add_argument("pct", type=int, help="max CPU performance %% (10-100); lower = cooler")
     b = sub.add_parser("battery")
     bg = b.add_mutually_exclusive_group(required=True)
     bg.add_argument("--cap", action="store_true", help="enable firmware conservation cap")

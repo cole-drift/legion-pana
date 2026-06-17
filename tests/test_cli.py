@@ -42,10 +42,11 @@ def test_mode_request(monkeypatch):
     assert cap["req"].args == {"name": "eco"}
 
 
-def test_tdp_request(monkeypatch):
+def test_power_request(monkeypatch):
     cap = _capture_request(monkeypatch)
-    cli.main(["tdp", "--pl1", "50", "--pl2", "60"])
-    assert cap["req"].args == {"pl1": 50, "pl2": 60}
+    cli.main(["power", "55"])
+    assert cap["req"].cmd == "power"
+    assert cap["req"].args == {"pct": 55}
 
 
 def test_battery_variants(monkeypatch):
