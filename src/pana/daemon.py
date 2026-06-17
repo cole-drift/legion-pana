@@ -58,9 +58,11 @@ class Daemon:
         self.socket_path = socket_path
         self._stop = asyncio.Event()
         self._last_light_state: str | None = None
+        self._last_ac: bool | None = None
         self._handlers: dict[str, Callable[[dict], dict]] = {
             "ping": lambda a: {"pong": True},
             "status": self._h_status,
+            "reapply": lambda a: (self.manager.reapply(), self.manager.status())[1],
             "monitor": lambda a: {"sample": self.monitor.latest()},
             "mode": lambda a: self.manager.apply_mode(a["name"]),
             "tdp": lambda a: self.manager.set_tdp(a.get("pl1"), a.get("pl2")),
@@ -119,6 +121,26 @@ class Daemon:
             return None
         return desired
 
+    def _check_power_transition(self) -> str | None:
+        """On AC<->DC change, re-apply settings (the firmware resets TDP on transition)."""
+        ac = self.manager.battery.ac_online()
+        if ac is None or ac == self._last_ac:
+            return None
+        self._last_ac = ac
+        auto = self.manager.config.auto_on_battery
+        if auto and ac is False:
+            self.manager.apply_mode(auto)
+            return f"auto:{auto}"
+        self.manager.reapply()
+        return "reapply"
+
+    def _monitor_tick(self) -> None:
+        self.monitor.sample()
+        try:
+            self._check_power_transition()
+        except Exception:
+            pass
+
     async def _every(self, interval: float, fn: Callable[[], None]) -> None:
         while not self._stop.is_set():
             try:
@@ -161,7 +183,7 @@ class Daemon:
 
         tasks = [
             asyncio.create_task(server.serve_forever()),
-            asyncio.create_task(self._every(self.manager.config.monitor_interval_s, self.monitor.sample)),
+            asyncio.create_task(self._every(self.manager.config.monitor_interval_s, self._monitor_tick)),
             asyncio.create_task(self.battery_watcher.run(self._stop)),
             asyncio.create_task(self._every(self.manager.config.poll_interval_s, self._scheduler_tick)),
         ]

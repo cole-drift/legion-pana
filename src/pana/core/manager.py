@@ -46,6 +46,8 @@ class Manager:
         self.presets = presets or default_presets()
         if self.state.battery_target is None:
             self.state.battery_target = self.config.battery_target
+        if self.state.mode is None:
+            self.state.mode = self.config.default_mode
 
     # ---- effective settings ----
 

@@ -21,7 +21,7 @@ def _hex_to_rgb(s: str) -> list[int]:
 
 def _build_request(args: argparse.Namespace) -> Request:
     c = args.cmd
-    if c in ("ping", "status"):
+    if c in ("ping", "status", "reapply"):
         return Request(cmd=c)
     if c == "mode":
         return Request(cmd="mode", args={"name": args.name})
@@ -92,6 +92,7 @@ def _parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("ping")
     sub.add_parser("status")
+    sub.add_parser("reapply")
     mon = sub.add_parser("monitor")
     mon.add_argument("--interval", type=float, default=2.0)
     m = sub.add_parser("mode")

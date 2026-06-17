@@ -100,3 +100,27 @@ def test_scheduler_manual_override_beats_schedule():
     daemon = _daemon(config=Config(night_enabled=True, night_start="20:00", night_end="07:00"))
     daemon.manager.state.lights_manual = "on"
     assert daemon._scheduler_tick(now_t=time(23, 0)) == "on"
+
+
+def test_reapply_command():
+    daemon = _daemon()
+    daemon.manager.state.mode = "eco"
+    resp = _call(daemon, "reapply")
+    assert resp.ok
+    # eco re-applied low-power profile
+    assert daemon.manager.fs.read(d.PLATFORM_PROFILE) == "low-power"
+
+
+def test_power_transition_reapplies_on_change():
+    daemon = _daemon()
+    daemon.manager.state.mode = "eco"
+    daemon.manager.fs._files["/sys/class/power_supply/ADP0/online"] = "1"
+    assert daemon._check_power_transition() == "reapply"  # first observation (None->True)
+    assert daemon._check_power_transition() is None         # unchanged
+
+
+def test_power_transition_auto_on_battery_rule():
+    daemon = _daemon(config=Config(auto_on_battery="eco"))
+    daemon.manager.fs._files["/sys/class/power_supply/ADP0/online"] = "0"
+    assert daemon._check_power_transition() == "auto:eco"
+    assert daemon.manager.fs.read(d.PLATFORM_PROFILE) == "low-power"

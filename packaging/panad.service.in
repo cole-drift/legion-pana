@@ -1,0 +1,24 @@
+[Unit]
+Description=pana — Lenovo Legion 7 16IAX10 control daemon
+Documentation=https://localhost/pana
+After=multi-user.target
+
+[Service]
+Type=notify
+ExecStart=/opt/pana/bin/panad --socket /run/pana/pana.sock
+Environment=PANA_SOCKET_GROUP=@GROUP@
+RuntimeDirectory=pana
+RuntimeDirectoryMode=0750
+Restart=on-failure
+RestartSec=2
+
+# --- hardening ---
+# ProtectSystem=strict leaves /dev,/proc,/sys writable; /var must be opened explicitly.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pana /sys/firmware/acpi/platform_profile /sys/class/firmware-attributes /sys/bus/platform/devices /sys/class/power_supply
+ProtectHome=yes
+NoNewPrivileges=yes
+# Do NOT set PrivateDevices=yes: the daemon needs /dev/hidraw* for keyboard lighting.
+
+[Install]
+WantedBy=multi-user.target

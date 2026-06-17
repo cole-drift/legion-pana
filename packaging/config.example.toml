@@ -1,0 +1,27 @@
+# /etc/pana/config.toml — user-authored defaults (read-only for the daemon).
+# Runtime overrides (current mode, soft target, manual light state) live in
+# /var/lib/pana/state.json and are managed by the daemon.
+
+[pana]
+# Mode applied on boot: eco | balanced | game
+default_mode = "balanced"
+
+# Soft battery target %, held at/above the firmware conservation cap by the
+# watcher. Uncomment to enable. Targets BELOW the firmware cap (~60-80%) are
+# not physically enforceable on this machine.
+# battery_target = 85
+
+# Keyboard backlight level used for "lights on" (0-9).
+light_on_brightness = 3
+
+# Night schedule for the keyboard/perimeter lights.
+night_enabled = false
+night_start = "20:00"
+night_end = "07:00"
+
+# Auto-switch to this mode whenever on battery (DC). Uncomment to enable.
+# auto_on_battery = "eco"
+
+# Loop intervals (seconds).
+poll_interval_s = 30
+monitor_interval_s = 2
