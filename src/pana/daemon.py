@@ -87,7 +87,8 @@ class Daemon:
                 effect=a.get("effect"),
             ),
             "night": lambda a: self.manager.set_night(
-                enabled=a.get("enabled"), clear_manual=a.get("clear", False)
+                enabled=a.get("enabled"), clear_manual=a.get("clear", False),
+                start=a.get("start"), end=a.get("end"),
             ),
         }
 
@@ -118,11 +119,10 @@ class Daemon:
 
     def _scheduler_tick(self, now_t: time | None = None) -> str | None:
         now_t = now_t or datetime.now().time()
+        start, end = self.manager.night_window()
         # Clear a manual override when we cross a day/night boundary, so manual
-        # toggles last only until the next boundary (spec §4).
-        night_now = scheduler.is_night(
-            now_t, self.manager.config.night_start, self.manager.config.night_end
-        )
+        # toggles last only until the next boundary.
+        night_now = scheduler.is_night(now_t, start, end)
         if (
             self._last_night is not None
             and night_now != self._last_night
@@ -131,21 +131,15 @@ class Daemon:
             self.manager.set_night(clear_manual=True)
         self._last_night = night_now
         desired = scheduler.desired_lights(
-            now_t,
-            self.manager.night_enabled(),
-            self.manager.config.night_start,
-            self.manager.config.night_end,
-            self.manager.state.lights_manual,
+            now_t, self.manager.night_enabled(), start, end, self.manager.state.lights_manual
         )
         if desired is None or not self.manager.lights.available():
             return None
         if desired == self._last_light_state:
             return None
         try:
-            if desired == "off":
-                self.manager.lights.off()
-            else:
-                self.manager.lights.set_brightness(self.manager.config.light_on_brightness)
+            # route through the manager so the saved color/effect is restored on "on"
+            self.manager.scheduled_lights(desired == "on")
             self._last_light_state = desired
         except Exception:
             return None

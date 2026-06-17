@@ -31,27 +31,36 @@ def _manager(state=None):
     return Manager(fs=_fs(), lights_opener=opener, config=Config(), state=state or State())
 
 
-def test_apply_mode_eco_caps_clock_and_sets_battery_lights():
+def test_apply_mode_eco_caps_clock_only():
     fs = _fs()
+    fs.write(d.CONSERVATION, "0")
     opener, dev = _opener()
     m = Manager(fs=fs, lights_opener=opener)
+    n_hid = len(dev.sent)
     st = m.apply_mode("eco")
     assert fs.read(d.PLATFORM_PROFILE) == "low-power"
-    assert fs.read(MAX_PERF_PCT) == "55"   # eco_max_perf_pct default -> the real cooling cap
-    assert fs.read(d.CONSERVATION) == "1"
-    assert st["mode"] == "eco"
-    assert st["cpu_cap"]["desired_pct"] == 55
-    assert dev.sent[-1][:5] == bytes([0x07, 0xCE, 0xC0, 0x03, 0])  # lights off
+    assert fs.read(MAX_PERF_PCT) == "50"   # eco_pct default
+    assert st["cpu_cap"]["desired_pct"] == 50
+    # modes are CPU-only now: battery + lights untouched
+    assert fs.read(d.CONSERVATION) == "0"
+    assert len(dev.sent) == n_hid
+
+
+def test_apply_mode_balanced_is_middle_tier():
+    fs = _fs()
+    m = Manager(fs=fs, lights_opener=_opener()[0])
+    st = m.apply_mode("balanced")
+    assert fs.read(MAX_PERF_PCT) == "80"   # balanced_pct default
+    assert st["cpu_cap"]["desired_pct"] == 80
 
 
 def test_apply_mode_performance_uncaps_clock():
     fs = _fs()
     m = Manager(fs=fs, lights_opener=_opener()[0])
-    m.apply_mode("eco")                   # cap first
+    m.apply_mode("eco")
     st = m.apply_mode("performance")
     assert fs.read(d.PLATFORM_PROFILE) == "performance"
-    assert fs.read(MAX_PERF_PCT) == "100"  # ceiling lifted
-    assert fs.read(d.CONSERVATION) == "0"
+    assert fs.read(MAX_PERF_PCT) == "100"
     assert st["cpu_cap"]["desired_pct"] is None
 
 
@@ -80,6 +89,25 @@ def test_set_lights_rainbow_clears_color():
     st = m.set_lights(effect="rainbow")
     assert st["lights"]["effect"] == "rainbow"
     assert st["lights"]["color"] is None
+
+
+def test_scheduled_lights_restores_saved_color_on_morning():
+    fs = _fs()
+    dev = FakeHid({OP_GET_BRIGHTNESS: bytes([0x07, 0, 0, 0, 5])})
+    m = Manager(fs=fs, lights_opener=lambda p: dev)
+    m.set_lights(color=(0, 0, 255))    # static blue saved
+    dev.sent.clear()
+    m.scheduled_lights(False)          # night: off
+    m.scheduled_lights(True)           # morning: must re-apply the saved color, not reset
+    assert any(s[1] == 0xCB for s in dev.sent)   # an EffectChange (color) was re-sent
+
+
+def test_set_night_times_override_window():
+    m = _manager()
+    m.set_night(start="21:30", end="06:30")
+    assert m.night_window() == ("21:30", "06:30")
+    st = m.status()["lights"]
+    assert st["night_start"] == "21:30" and st["night_end"] == "06:30"
 
 
 def test_set_lights_off_then_on_tracks_brightness():
@@ -117,10 +145,10 @@ def test_set_power_floor_clamp():
 def test_enforce_cap_pushes_down_after_thermald_raises():
     fs = _fs()
     m = Manager(fs=fs, lights_opener=_opener()[0])
-    m.apply_mode("eco")                    # cap to 55%
+    m.apply_mode("eco")                    # cap to 50%
     fs.write(MAX_PERF_PCT, "100")          # pretend something raised the ceiling
     m.enforce_cap()
-    assert fs.read(MAX_PERF_PCT) == "55"   # re-asserted down
+    assert fs.read(MAX_PERF_PCT) == "50"   # re-asserted down
 
 
 def test_enforce_cap_noop_when_uncapped():

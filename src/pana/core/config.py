@@ -16,9 +16,12 @@ class Config:
     default_mode: str = "balanced"
     battery_target: int | None = None  # soft target %; None = no soft target
     light_on_brightness: int = 3
-    # eco mode's CPU clock-ceiling cap, as intel_pstate max_perf_pct (1-100). The
-    # cooling lever that works on this machine (RAPL/ppt power limits are firmware-locked).
-    eco_max_perf_pct: int = 55
+    # Per-mode CPU clock-ceiling cap (intel_pstate max_perf_pct, 1-100) — the cooling
+    # lever that works on this machine. Modes are now a pure CPU ladder; battery and
+    # lights are controlled separately.
+    eco_pct: int = 50
+    balanced_pct: int = 80
+    performance_pct: int = 100
     night_enabled: bool = False
     night_start: str = "20:00"
     night_end: str = "07:00"
@@ -57,9 +60,12 @@ class State:
     lights_manual: str | None = None  # "on"|"off" manual override of the schedule
     night_enabled: bool | None = None  # None = inherit Config.night_enabled
     custom_max_pct: int | None = None  # clock-ceiling cap for "custom" mode (pana power)
-    light_brightness: int | None = None  # last brightness pana set (None = unknown)
+    light_on: bool | None = None         # whether lights are on (preserves brightness/color across off/on)
+    light_brightness: int | None = None  # the on-level brightness pana set
     light_color: list | None = None      # last static [r,g,b] pana set
     light_effect: str | None = None      # "static" | "rainbow" | "breathe"
+    night_start: str | None = None       # override Config.night_start (e.g. "21:30")
+    night_end: str | None = None         # override Config.night_end
 
     def to_json(self) -> str:
         return json.dumps(asdict(self))

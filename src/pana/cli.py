@@ -49,9 +49,20 @@ def _build_request(args: argparse.Namespace) -> Request:
             raise SystemExit("lights needs on|off|--brightness N|--color RRGGBB|--effect E")
         return Request(cmd="lights", args=a)
     if c == "night":
+        a = {}
         if args.state == "clear":
-            return Request(cmd="night", args={"clear": True})
-        return Request(cmd="night", args={"enabled": args.state == "on"})
+            a["clear"] = True
+        elif args.state == "on":
+            a["enabled"] = True
+        elif args.state == "off":
+            a["enabled"] = False
+        if args.start:
+            a["start"] = args.start
+        if args.end:
+            a["end"] = args.end
+        if not a:
+            raise SystemExit("night needs on|off|clear and/or --start HH:MM --end HH:MM")
+        return Request(cmd="night", args=a)
     raise SystemExit(f"unhandled command {c}")
 
 
@@ -105,7 +116,9 @@ def _parser() -> argparse.ArgumentParser:
     li.add_argument("--color", help="RRGGBB hex (solid color)")
     li.add_argument("--effect", choices=["static", "rainbow", "breathe"])
     n = sub.add_parser("night")
-    n.add_argument("state", choices=["on", "off", "clear"])
+    n.add_argument("state", nargs="?", choices=["on", "off", "clear"])
+    n.add_argument("--start", help="night-window start HH:MM (e.g. 21:30)")
+    n.add_argument("--end", help="night-window end HH:MM (e.g. 06:30)")
     return p
 
 

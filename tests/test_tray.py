@@ -5,9 +5,11 @@ def _status(**over):
     base = {
         "mode": "eco",
         "platform_profile": "low-power",
+        "cpu_cap": {"available": True, "max_perf_pct": 50, "desired_pct": 50},
         "battery": {"capacity": 65, "status": "Charging", "conservation": True},
         "lights": {"available": True, "night_enabled": False, "on": False,
-                   "brightness": 0, "color": None, "effect": None},
+                   "brightness": 0, "color": None, "effect": None,
+                   "night_start": "20:00", "night_end": "07:00"},
         "monitor": {"cpu_temp_c": 60.0, "cpu_power_w": 33.0},
     }
     base.update(over)
@@ -89,6 +91,27 @@ def test_battery_and_controls_present():
     model = menu_model(_status(battery={"conservation": True}))
     assert _find(model, cmd="battery", args={"cap": True})["checked"] is True
     assert _find(model, cmd="battery", args={"off": True})["checked"] is False
-    assert any(i.get("cmd") == "night" for i in model)
+    assert any(i.get("cmd") == "night" for i in _flatten(model))  # night lives in a submenu
     assert any(i.get("action") == "quit" for i in model)
     assert any(i.get("action") == "refresh" for i in model)
+
+
+def test_title_includes_cpu_cap():
+    assert "CPU 50%" in menu_model(_status())[0]["text"]
+
+
+def test_mode_labels_are_cpu_only():
+    model = menu_model(_status())
+    for m in MODES:
+        lbl = _find(model, cmd="mode", args={"name": m})["text"]
+        assert "battery" not in lbl.lower() and "lights" not in lbl.lower()
+
+
+def test_night_submenu_has_enable_and_window_presets():
+    model = menu_model(_status(lights={"available": True, "night_enabled": True,
+                                       "night_start": "22:00", "night_end": "06:00"}))
+    # enable/disable reflect state
+    assert _find(model, cmd="night", args={"enabled": True})["checked"] is True
+    # the current window preset is checked
+    win = _find(model, cmd="night", args={"start": "22:00", "end": "06:00"})
+    assert win["checked"] is True

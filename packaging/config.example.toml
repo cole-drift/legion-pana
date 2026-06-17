@@ -14,10 +14,13 @@ default_mode = "balanced"
 # Keyboard backlight level used for "lights on" (0-9).
 light_on_brightness = 3
 
-# Cooling: eco caps the CPU clock ceiling via intel_pstate max_perf_pct (1-100).
-# This is the lever that works on this machine — RAPL/ppt power limits are
-# firmware-locked. Lower = cooler/less power. balanced/game restore 100%.
-eco_max_perf_pct = 55
+# Cooling ladder: each mode caps the CPU clock ceiling via intel_pstate max_perf_pct
+# (1-100) — the lever that works on this machine (RAPL/ppt power limits are
+# firmware-locked). Lower = cooler/less power. Modes are CPU-only; battery + lights
+# are controlled separately.
+eco_pct = 50           # coolest
+balanced_pct = 80      # moderate
+performance_pct = 100  # full power
 
 # Night schedule for the keyboard/perimeter lights.
 night_enabled = false

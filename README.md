@@ -3,10 +3,10 @@
 A personal control + monitoring tool for the **Lenovo Legion 7 16IAX10**, tuned
 for off-grid / hot-climate / solar use. Pure-Python, no kernel module.
 
-- **Run cool**: `pana mode eco` (caps CPU clock ceiling → less heat & draw) ↔ `pana mode performance`
-- **Custom cap**: `pana power 55` (CPU performance %, via intel_pstate; lower = cooler)
+- **Modes (CPU clock ladder)**: `pana mode eco` (50%) · `balanced` (80%) · `performance` (100%); `pana power 65` for a custom cap. Battery/lights are *not* bundled into modes.
 - **Battery**: `pana battery --cap` (firmware cap) / `--limit 85` (soft target) / `--off`
-- **Lights**: `pana lights off|on|--brightness 0-9|--color RRGGBB|--effect static|rainbow|breathe`; `pana night on|off|clear`
+- **Lights**: `pana lights off|on|--brightness 0-9|--color RRGGBB|--effect static|rainbow|breathe`
+- **Night auto-off**: `pana night on|off|clear` · `pana night --start 21:30 --end 06:30`
 - **Monitor**: `pana monitor` (live W / °C / battery), `pana status`
 
 ## Architecture

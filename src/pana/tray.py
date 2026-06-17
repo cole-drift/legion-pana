@@ -10,10 +10,16 @@ DEFAULT_SOCKET = "/run/pana/pana.sock"
 
 MODES = ["eco", "balanced", "performance"]
 MODE_LABELS = {
-    "eco": "Eco — cool & quiet (CPU capped, lights off, battery conserve)",
-    "balanced": "Balanced — default (full clocks, no caps)",
-    "performance": "Performance — full power (lights on, charge to 100%)",
+    "eco": "Eco — coolest (CPU throttled hard)",
+    "balanced": "Balanced — moderate CPU ceiling",
+    "performance": "Performance — full power (no cap)",
 }
+NIGHT_WINDOWS = [
+    ("8pm – 7am", ("20:00", "07:00")),
+    ("9pm – 7am", ("21:00", "07:00")),
+    ("10pm – 6am", ("22:00", "06:00")),
+    ("11pm – 8am", ("23:00", "08:00")),
+]
 LIGHT_LEVELS = [("Low", 2), ("Medium", 5), ("High", 9)]
 LIGHT_COLORS = [
     ("White", (255, 255, 255)), ("Red", (255, 0, 0)), ("Orange", (255, 80, 0)),
@@ -26,7 +32,10 @@ LIGHT_EFFECTS = [("Static color", "static"), ("Rainbow", "rainbow"), ("Breathing
 def _title(status: dict) -> str:
     bat = status.get("battery") or {}
     mon = status.get("monitor") or {}
+    cap = (status.get("cpu_cap") or {}).get("max_perf_pct")
     parts = [f"pana — {status.get('mode') or '?'}"]
+    if cap is not None:
+        parts.append(f"CPU {cap}%")
     if bat.get("capacity") is not None:
         parts.append(f"{bat['capacity']}%")
     if mon.get("cpu_temp_c") is not None:
@@ -84,9 +93,19 @@ def menu_model(status: dict) -> list[dict]:
     else:
         items.append({"type": "label", "text": "Lighting: (no device found)"})
 
-    items.append({"text": "Night schedule (auto lights off)", "cmd": "night",
-                  "args": {"enabled": not bool(lights.get("night_enabled"))},
-                  "checked": bool(lights.get("night_enabled"))})
+    nstart = lights.get("night_start", "?")
+    nend = lights.get("night_end", "?")
+    night_on = bool(lights.get("night_enabled"))
+    night_items: list[dict] = [
+        {"text": "Enabled", "cmd": "night", "args": {"enabled": True}, "checked": night_on, "radio": True},
+        {"text": "Disabled", "cmd": "night", "args": {"enabled": False}, "checked": not night_on, "radio": True},
+        {"type": "separator"},
+        {"type": "label", "text": "Window:"},
+    ]
+    for lbl, (s, e) in NIGHT_WINDOWS:
+        night_items.append({"text": lbl, "cmd": "night", "args": {"start": s, "end": e},
+                            "checked": (nstart, nend) == (s, e), "radio": True})
+    items.append({"type": "submenu", "text": f"Night auto-off  ({nstart}–{nend})", "items": night_items})
     items.append({"type": "separator"})
     items.append({"text": "Battery: conserve (~80% cap)", "cmd": "battery", "args": {"cap": True},
                   "checked": cons is True, "radio": True})

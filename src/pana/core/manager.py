@@ -58,30 +58,28 @@ class Manager:
             return self.state.night_enabled
         return self.config.night_enabled
 
+    def night_window(self) -> tuple[str, str]:
+        start = self.state.night_start or self.config.night_start
+        end = self.state.night_end or self.config.night_end
+        return start, end
+
+    def _mode_pct(self, name: str) -> int:
+        return {
+            "eco": self.config.eco_pct,
+            "balanced": self.config.balanced_pct,
+            "performance": self.config.performance_pct,
+        }.get(name, 100)
+
     # ---- internal apply ----
 
     def _apply_preset(self, p: Preset) -> None:
-        # platform_profile is cosmetic on this firmware (sets the power-button color
-        # but does NOT change power limits), so a hiccup here must not block the cap.
+        # A mode = a CPU clock-ceiling tier + a cosmetic platform_profile (power-button
+        # color). It does NOT touch battery or lights — those are controlled separately.
         _safe(lambda: self.profile.set(p.platform_profile))
-        # the actual cooling lever: intel_pstate clock-ceiling cap.
         if self.cpufreq.available():
-            if p.eco_cap:
-                pct = self.config.eco_max_perf_pct
-                self.cpufreq.set_max_pct(pct)
-                self._desired_pct = pct
-            else:
-                self.cpufreq.set_max_pct(100)
-                self._desired_pct = None  # uncapped: don't enforce
-        if p.battery == "cap":
-            self.battery.set_conservation(True)
-        elif p.battery == "off":
-            self.battery.set_conservation(False)
-        if self.lights.available():
-            if p.lights == "off":
-                self.lights.off()
-            elif p.lights == "on":
-                self.lights.set_brightness(self.config.light_on_brightness)
+            pct = self._mode_pct(p.name)
+            self.cpufreq.set_max_pct(pct)
+            self._desired_pct = pct if pct < 100 else None  # only enforce a real cap
 
     def _persist(self) -> None:
         _safe(self.state.save)
@@ -138,6 +136,23 @@ class Manager:
         self._persist()
         return self.status()
 
+    def _apply_appearance(self) -> None:
+        """Re-send the saved effect/color (used when turning lights back on)."""
+        eff, col = self.state.light_effect, self.state.light_color
+        if eff == "rainbow":
+            self.lights.rainbow()
+        elif eff == "breathe" and col:
+            self.lights.breathe(tuple(col))
+        elif col:
+            self.lights.color(tuple(col))
+
+    def _lights_on(self) -> None:
+        """Turn lights on, restoring the saved appearance + brightness."""
+        self._apply_appearance()
+        b = self.state.light_brightness or self.config.light_on_brightness
+        self.lights.set_brightness(b)
+        self.state.light_brightness, self.state.light_on = b, True
+
     def set_lights(
         self,
         *,
@@ -149,7 +164,7 @@ class Manager:
         if not self.lights.available():
             raise RuntimeError("no lighting device available")
 
-        # 1) effect / color (a bare color implies a static effect)
+        appearance_changed = effect is not None or color is not None
         if effect == "rainbow":
             self.lights.rainbow()
             self.state.light_effect, self.state.light_color = "rainbow", None
@@ -162,26 +177,48 @@ class Manager:
             self.lights.color(rgb)
             self.state.light_effect, self.state.light_color = "static", list(rgb)
 
-        # 2) brightness / on / off
+        if brightness is not None:
+            self.state.light_brightness = brightness
+
         if on is False:
             self.lights.off()
-            self.state.light_brightness, self.state.lights_manual = 0, "off"
-        elif on is True:
-            b = brightness if brightness is not None else (self.state.light_brightness or self.config.light_on_brightness)
+            self.state.light_on = False
+            self.state.lights_manual = "off"   # override the night schedule until next boundary
+        elif on is True or brightness is not None or appearance_changed:
+            # turning on, or changing appearance/brightness, implies lights on.
+            b = self.state.light_brightness or self.config.light_on_brightness
             self.lights.set_brightness(b)
-            self.state.light_brightness, self.state.lights_manual = b, "on"
-        elif brightness is not None:
-            self.lights.set_brightness(brightness)
-            self.state.light_brightness = brightness
+            self.state.light_brightness, self.state.light_on = b, True
+            self.state.lights_manual = "on"
 
         self._persist()
         return self.status()
 
-    def set_night(self, enabled: bool | None = None, clear_manual: bool = False) -> dict:
+    def scheduled_lights(self, on: bool) -> None:
+        """Apply a schedule-driven on/off WITHOUT clobbering the saved appearance."""
+        if not self.lights.available():
+            return
+        if on:
+            self._apply_appearance()
+            self.lights.set_brightness(self.state.light_brightness or self.config.light_on_brightness)
+        else:
+            self.lights.off()
+
+    def set_night(
+        self,
+        enabled: bool | None = None,
+        clear_manual: bool = False,
+        start: str | None = None,
+        end: str | None = None,
+    ) -> dict:
         if enabled is not None:
             self.state.night_enabled = enabled
         if clear_manual:
             self.state.lights_manual = None
+        if start is not None:
+            self.state.night_start = start
+        if end is not None:
+            self.state.night_end = end
         self._persist()
         return self.status()
 
@@ -227,9 +264,11 @@ class Manager:
                 "available": self.lights.available(),
                 "manual": self.state.lights_manual,
                 "night_enabled": self.night_enabled(),
+                "night_start": self.night_window()[0],
+                "night_end": self.night_window()[1],
                 "brightness": self.state.light_brightness,
                 "color": self.state.light_color,
                 "effect": self.state.light_effect,
-                "on": (self.state.light_brightness or 0) > 0,
+                "on": bool(self.state.light_on),
             },
         }
