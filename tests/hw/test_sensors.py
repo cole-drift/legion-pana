@@ -62,3 +62,25 @@ def test_missing_sensors_return_none():
     assert s.nvme_temps_c() == []
     assert s.rapl_energy_uj() is None
     assert s.cpu_freq_mhz() == {"avg": None, "max": None}
+
+
+class _PermDeniedSysfs(FakeSysfs):
+    def __init__(self, files, deny):
+        super().__init__(files)
+        self._deny = set(deny)
+
+    def read(self, path):
+        if path in self._deny:
+            raise PermissionError(path)
+        return super().read(path)
+
+
+def test_unreadable_rapl_does_not_blank_other_sensors():
+    # RAPL energy_uj is root-only on modern kernels; a denied read must not crash.
+    fs = _PermDeniedSysfs(
+        {RAPL_ENERGY: "123", "/sys/class/power_supply/BAT0/capacity": "50"},
+        deny={RAPL_ENERGY},
+    )
+    s = Sensors(fs)
+    assert s.rapl_energy_uj() is None
+    assert s.battery()["capacity"] == 50
