@@ -20,7 +20,9 @@ echo "==> installing pana from $SRC for user $USER_NAME (group $GROUP)"
 
 python3 -m venv "$PREFIX"
 "$PREFIX/bin/pip" install --quiet --upgrade pip
-"$PREFIX/bin/pip" install --quiet "$SRC"
+# editable so re-running this (or `git pull`) updates the code in place — a plain
+# `pip install "$SRC"` is a no-op when the version is unchanged, leaving stale code.
+"$PREFIX/bin/pip" install --quiet -e "$SRC"
 
 for b in pana panad pana-tray; do
     ln -sf "$PREFIX/bin/$b" "/usr/local/bin/$b"
@@ -37,7 +39,10 @@ install -d -m755 /etc/systemd/user
 install -m644 "$SRC/packaging/pana-tray.service" /etc/systemd/user/pana-tray.service
 
 systemctl daemon-reload
-systemctl enable --now panad.service
+systemctl enable panad.service
+# restart (not `enable --now`) so unit + code changes apply even on re-runs of an
+# already-running daemon; restart also starts it if it was stopped.
+systemctl restart panad.service
 
 echo "==> done. Try:  pana status   (no sudo needed)"
 echo "    Optional tray:  sudo $PREFIX/bin/pip install pystray Pillow && systemctl --user enable --now pana-tray"
