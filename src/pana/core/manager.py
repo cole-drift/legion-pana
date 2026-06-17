@@ -160,22 +160,32 @@ class Manager:
         brightness: int | None = None,
         color: tuple[int, int, int] | None = None,
         effect: str | None = None,
+        zone: str = "keyboard",
+        logo: bool | None = None,
     ) -> dict:
         if not self.lights.available():
             raise RuntimeError("no lighting device available")
 
-        appearance_changed = effect is not None or color is not None
+        if logo is not None:
+            self.lights.logo(logo)
+
+        # saved appearance is tracked for the keyboard zone only; other zones apply directly
+        track = zone == "keyboard"
+        appearance_changed = (effect is not None or color is not None) and track
         if effect == "rainbow":
-            self.lights.rainbow()
-            self.state.light_effect, self.state.light_color = "rainbow", None
+            self.lights.rainbow(zone=zone)
+            if track:
+                self.state.light_effect, self.state.light_color = "rainbow", None
         elif effect == "breathe":
             rgb = tuple(color) if color else tuple(self.state.light_color or (255, 255, 255))
-            self.lights.breathe(rgb)
-            self.state.light_effect, self.state.light_color = "breathe", list(rgb)
+            self.lights.breathe(rgb, zone=zone)
+            if track:
+                self.state.light_effect, self.state.light_color = "breathe", list(rgb)
         elif color is not None or effect == "static":
             rgb = tuple(color) if color else tuple(self.state.light_color or (255, 255, 255))
-            self.lights.color(rgb)
-            self.state.light_effect, self.state.light_color = "static", list(rgb)
+            self.lights.color(rgb, zone=zone)
+            if track:
+                self.state.light_effect, self.state.light_color = "static", list(rgb)
 
         if brightness is not None:
             self.state.light_brightness = brightness

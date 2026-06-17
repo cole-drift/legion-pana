@@ -116,14 +116,18 @@ class Lights:
     def logo(self, on: bool) -> None:
         self._send(spectrum.set_logo(on))
 
-    def color(self, rgb: tuple[int, int, int], keycodes: list[int] | None = None) -> None:
-        self._send(spectrum.static_color(rgb, keycodes, profile=self._profile()))
+    def _zone_keys(self, zone: str) -> list[int]:
+        return spectrum.ZONES.get(zone, spectrum.KEYBOARD_KEYS)
+
+    def color(self, rgb: tuple[int, int, int], zone: str = "keyboard") -> None:
+        self._send(spectrum.static_color(rgb, self._zone_keys(zone), profile=self._profile()))
+        if tuple(rgb) != (0, 0, 0):  # setting a zone to black = turn it off; don't relight
+            self._ensure_lit()
+
+    def rainbow(self, speed: int = 2, zone: str = "keyboard") -> None:
+        self._send(spectrum.rainbow(self._zone_keys(zone), speed=speed, profile=self._profile()))
         self._ensure_lit()
 
-    def rainbow(self, speed: int = 2) -> None:
-        self._send(spectrum.rainbow(speed=speed, profile=self._profile()))
-        self._ensure_lit()
-
-    def breathe(self, rgb: tuple[int, int, int], speed: int = 2) -> None:
-        self._send(spectrum.breathe(rgb, speed=speed, profile=self._profile()))
+    def breathe(self, rgb: tuple[int, int, int], speed: int = 2, zone: str = "keyboard") -> None:
+        self._send(spectrum.breathe(rgb, self._zone_keys(zone), speed=speed, profile=self._profile()))
         self._ensure_lit()

@@ -45,8 +45,12 @@ def _build_request(args: argparse.Namespace) -> Request:
             a["color"] = _hex_to_rgb(args.color)
         if args.effect:
             a["effect"] = args.effect
+        if args.zone:
+            a["zone"] = args.zone
+        if args.logo:
+            a["logo"] = args.logo == "on"
         if not a:
-            raise SystemExit("lights needs on|off|--brightness N|--color RRGGBB|--effect E")
+            raise SystemExit("lights needs on|off|--brightness|--color|--effect|--zone|--logo")
         return Request(cmd="lights", args=a)
     if c == "night":
         a = {}
@@ -113,8 +117,11 @@ def _parser() -> argparse.ArgumentParser:
     li = sub.add_parser("lights")
     li.add_argument("state", nargs="?", choices=["on", "off"])
     li.add_argument("--brightness", type=int, help="0-9")
-    li.add_argument("--color", help="RRGGBB hex (solid color)")
+    li.add_argument("--color", help="RRGGBB hex (solid color); 000000 turns a zone off")
     li.add_argument("--effect", choices=["static", "rainbow", "breathe"])
+    li.add_argument("--zone", choices=["keyboard", "perimeter", "rear", "logo", "all"],
+                    help="which LEDs --color/--effect apply to (rear = strip above keyboard)")
+    li.add_argument("--logo", choices=["on", "off"], help="lid LEGION logo on/off")
     n = sub.add_parser("night")
     n.add_argument("state", nargs="?", choices=["on", "off", "clear"])
     n.add_argument("--start", help="night-window start HH:MM (e.g. 21:30)")

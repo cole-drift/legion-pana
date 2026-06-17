@@ -91,6 +91,24 @@ def test_set_lights_rainbow_clears_color():
     assert st["lights"]["color"] is None
 
 
+def test_set_lights_zone_does_not_touch_keyboard_state():
+    fs = _fs()
+    dev = FakeHid({OP_GET_BRIGHTNESS: bytes([0x07, 0, 0, 0, 5])})
+    m = Manager(fs=fs, lights_opener=lambda p: dev)
+    m.set_lights(color=(0, 0, 255))                 # keyboard blue -> saved
+    m.set_lights(color=(0, 0, 0), zone="rear")      # turn the rear strip off
+    assert m.status()["lights"]["color"] == [0, 0, 255]   # keyboard appearance preserved
+    assert any(s[1] == 0xCB for s in dev.sent)             # an EffectChange was sent for the zone
+
+
+def test_set_lights_logo_off_sends_logo_op():
+    fs = _fs()
+    dev = FakeHid({OP_GET_BRIGHTNESS: bytes([0x07, 0, 0, 0, 5])})
+    m = Manager(fs=fs, lights_opener=lambda p: dev)
+    m.set_lights(logo=False)
+    assert any(s[1] == 0xA6 and s[4] == 0 for s in dev.sent)   # SET_LOGO off
+
+
 def test_scheduled_lights_restores_saved_color_on_morning():
     fs = _fs()
     dev = FakeHid({OP_GET_BRIGHTNESS: bytes([0x07, 0, 0, 0, 5])})

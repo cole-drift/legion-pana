@@ -53,6 +53,24 @@ KEYBOARD_KEYS = [
     0x009F, 0x00A1, 0x00A3, 0x00A5, 0x00A7,
 ]
 
+# Perimeter accent LEDs. The "rear accent" runs along the hinge — i.e. the lit strip
+# ABOVE the keyboard (the power-button area). Side+front accent are the lower edge.
+PERIMETER_REAR = [
+    0x03E9, 0x03EA, 0x03EB, 0x03EC, 0x03ED, 0x03EE, 0x03EF, 0x03F0, 0x03F1,
+    0x03F2, 0x03F3, 0x03F4, 0x03F5, 0x03F6, 0x03F7, 0x03F8, 0x03F9, 0x03FA,
+]
+PERIMETER_FRONT = [0x01F5, 0x01F6, 0x01F7, 0x01F8, 0x01F9, 0x01FA, 0x01FB, 0x01FC, 0x01FD, 0x01FE]
+PERIMETER_KEYS = PERIMETER_REAR + PERIMETER_FRONT
+LOGO_KEY = 0x05DD  # single LED behind the lid "LEGION" text
+
+ZONES = {
+    "keyboard": KEYBOARD_KEYS,
+    "perimeter": PERIMETER_KEYS,
+    "rear": PERIMETER_REAR,      # the strip above the keyboard / power-button area
+    "logo": [LOGO_KEY],
+    "all": KEYBOARD_KEYS + PERIMETER_KEYS + [LOGO_KEY],
+}
+
 
 def make_request(op: int, payload: bytes = b"") -> bytes:
     header = bytes([REPORT_ID, op, _SIZE_BYTE, _TAIL])

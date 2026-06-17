@@ -85,6 +85,8 @@ class Daemon:
                 brightness=a.get("brightness"),
                 color=tuple(a["color"]) if a.get("color") else None,
                 effect=a.get("effect"),
+                zone=a.get("zone", "keyboard"),
+                logo=a.get("logo"),
             ),
             "night": lambda a: self.manager.set_night(
                 enabled=a.get("enabled"), clear_manual=a.get("clear", False),
