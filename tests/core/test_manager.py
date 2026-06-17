@@ -1,7 +1,10 @@
+import pytest
+
 from pana.core.config import Config, State
 from pana.core.manager import Manager
 from pana.hw import detect as d
 from pana.hw.hid import FakeHid
+from pana.hw.rapl import PL1, PL1_MAX, PL2, PL2_MAX
 from pana.hw.spectrum import OP_GET_BRIGHTNESS
 from pana.hw.transport import FakeSysfs
 
@@ -10,16 +13,15 @@ def _fs() -> FakeSysfs:
     return FakeSysfs({
         d.PLATFORM_PROFILE: "performance",
         d.PLATFORM_PROFILE_CHOICES: "low-power balanced balanced-performance performance custom",
-        f"{d.PPT_DIR}/ppt_pl1_spl/current_value": "0",
-        f"{d.PPT_DIR}/ppt_pl1_spl/min_value": "50",
-        f"{d.PPT_DIR}/ppt_pl1_spl/max_value": "110",
-        f"{d.PPT_DIR}/ppt_pl2_sppt/current_value": "0",
-        f"{d.PPT_DIR}/ppt_pl2_sppt/min_value": "60",
-        f"{d.PPT_DIR}/ppt_pl2_sppt/max_value": "168",
         d.CONSERVATION: "0",
         "/sys/class/power_supply/BAT0/capacity": "38",
         "/sys/class/power_supply/BAT0/status": "Charging",
         "/sys/class/hidraw/hidraw4/device/uevent": "HID_ID=0003:0000048D:0000C197\n",
+        "/sys/class/powercap/intel-rapl:0/name": "package-0",
+        PL1: "115000000",
+        PL2: "168000000",
+        PL1_MAX: "120000000",
+        PL2_MAX: "224000000",
     })
 
 
@@ -33,49 +35,89 @@ def _manager(state=None):
     return Manager(fs=_fs(), lights_opener=opener, config=Config(), state=state or State())
 
 
-def test_apply_mode_eco_sets_profile_battery_lights():
+def test_apply_mode_eco_caps_rapl_and_sets_battery_lights():
     fs = _fs()
     opener, dev = _opener()
     m = Manager(fs=fs, lights_opener=opener)
     st = m.apply_mode("eco")
     assert fs.read(d.PLATFORM_PROFILE) == "low-power"
+    assert fs.read(PL1) == "45000000"   # eco_pl1_w default 45W -> the real cooling cap
+    assert fs.read(PL2) == "60000000"
     assert fs.read(d.CONSERVATION) == "1"
     assert st["mode"] == "eco"
-    # lights off => set-brightness 0 was the last sent report
-    assert dev.sent[-1][:5] == bytes([0x07, 0xCE, 0xC0, 0x03, 0])
+    assert st["rapl"]["desired_w"] == {"pl1": 45.0, "pl2": 60.0}
+    assert dev.sent[-1][:5] == bytes([0x07, 0xCE, 0xC0, 0x03, 0])  # lights off
 
 
-def test_apply_mode_game():
+def test_apply_mode_game_uncaps_rapl():
     fs = _fs()
     m = Manager(fs=fs, lights_opener=_opener()[0])
-    m.apply_mode("game")
+    # first cap via eco, then game must lift it
+    m.apply_mode("eco")
+    st = m.apply_mode("game")
     assert fs.read(d.PLATFORM_PROFILE) == "performance"
+    assert fs.read(PL1) == "115000000"   # restored to stock
     assert fs.read(d.CONSERVATION) == "0"
+    assert st["rapl"]["desired_w"] is None   # not enforced when uncapped
 
 
 def test_apply_mode_unknown_raises():
-    import pytest
     with pytest.raises(ValueError):
         _manager().apply_mode("ludicrous")
 
 
-def test_set_tdp_enters_custom_and_clamps():
+def test_set_tdp_caps_via_rapl_and_clamps():
     fs = _fs()
     m = Manager(fs=fs, lights_opener=_opener()[0])
-    m.set_tdp(pl1=10, pl2=999)
-    assert fs.read(d.PLATFORM_PROFILE) == "custom"
-    assert fs.read(f"{d.PPT_DIR}/ppt_pl1_spl/current_value") == "50"   # clamped up
-    assert fs.read(f"{d.PPT_DIR}/ppt_pl2_sppt/current_value") == "168"  # clamped down
+    st = m.set_tdp(pl1=40, pl2=999)
+    assert fs.read(PL1) == "40000000"     # 40W applied
+    assert fs.read(PL2) == "224000000"    # clamped to PL2 max
+    assert st["mode"] == "custom"
+    assert m.state.custom_pl1 == 40.0
+    assert st["rapl"]["desired_w"]["pl1"] == 40.0
+
+
+def test_set_tdp_floor_clamp():
+    fs = _fs()
+    m = Manager(fs=fs, lights_opener=_opener()[0])
+    m.set_tdp(pl1=1)
+    assert fs.read(PL1) == "8000000"      # FLOOR_W
+
+
+def test_enforce_rapl_pushes_down_after_thermald_raises():
+    fs = _fs()
+    m = Manager(fs=fs, lights_opener=_opener()[0])
+    m.apply_mode("eco")                   # cap PL1 to 45W
+    fs.write(PL1, "115000000")            # pretend thermald reset it to stock
+    m.enforce_rapl()
+    assert fs.read(PL1) == "45000000"     # re-asserted down to the cap
+
+
+def test_enforce_rapl_noop_when_uncapped():
+    fs = _fs()
+    m = Manager(fs=fs, lights_opener=_opener()[0])
+    m.apply_mode("game")                  # uncapped -> not enforced
+    fs.write(PL1, "115000000")
+    n_writes = len(fs.writes)
+    m.enforce_rapl()
+    assert len(fs.writes) == n_writes     # nothing written
+
+
+def test_reapply_custom_restores_rapl_caps():
+    fs = _fs()
+    m = Manager(fs=fs, lights_opener=_opener()[0], state=State(mode="custom", custom_pl1=50.0))
+    m.reapply()
+    assert fs.read(PL1) == "50000000"
+    assert m._desired_rapl == {"pl1": 50.0}
 
 
 def test_set_battery_target_records_and_caps_when_at_target():
     fs = _fs()
-    fs.write(d.CONSERVATION, "0")
     fs._files["/sys/class/power_supply/BAT0/capacity"] = "90"
     m = Manager(fs=fs, lights_opener=_opener()[0])
     st = m.set_battery(target=85)
     assert st["battery"]["soft_target"] == 85
-    assert fs.read(d.CONSERVATION) == "1"  # already above target -> capped now
+    assert fs.read(d.CONSERVATION) == "1"
 
 
 def test_status_shape():
@@ -84,7 +126,8 @@ def test_status_shape():
     assert "custom" in st["profile_choices"]
     assert st["battery"]["capacity"] == 38
     assert st["lights"]["available"] is True
-    assert set(st["ppt"]) == {"ppt_pl1_spl", "ppt_pl2_sppt"}
+    assert st["rapl"]["available"] is True
+    assert st["rapl"]["limits_w"]["pl1"] == 115.0
 
 
 def test_lights_on_honors_explicit_brightness():
@@ -92,21 +135,7 @@ def test_lights_on_honors_explicit_brightness():
     dev = FakeHid({OP_GET_BRIGHTNESS: bytes([0x07, 0, 0, 0, 5])})
     m = Manager(fs=fs, lights_opener=lambda p: dev, config=Config(light_on_brightness=3))
     m.set_lights(on=True, brightness=7)
-    # explicit 7 wins over the config default of 3
     assert dev.sent[-1][:5] == bytes([0x07, 0xCE, 0xC0, 0x03, 7])
-
-
-def test_apply_preset_unsettable_ppt_raises_before_custom():
-    import pytest
-
-    from pana.core.presets import Preset
-
-    fs = _fs()
-    m = Manager(fs=fs, lights_opener=_opener()[0])
-    with pytest.raises(ValueError):
-        m._apply_preset(Preset(name="x", platform_profile="custom", ppt={"ppt_pl3_fppt": 100}))
-    # must NOT have entered custom mode with a partial limit
-    assert fs.read(d.PLATFORM_PROFILE) == "performance"
 
 
 def test_status_battery_honesty_fields():
@@ -120,8 +149,7 @@ def test_status_battery_honesty_fields():
 
 
 def test_night_enabled_inherits_config_then_state_override():
-    opener = _opener()[0]
-    m = Manager(fs=_fs(), lights_opener=opener, config=Config(night_enabled=True))
+    m = Manager(fs=_fs(), lights_opener=_opener()[0], config=Config(night_enabled=True))
     assert m.night_enabled() is True
     m.set_night(enabled=False)
     assert m.night_enabled() is False

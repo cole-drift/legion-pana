@@ -169,6 +169,10 @@ class Daemon:
             self._check_power_transition()
         except Exception:
             pass
+        try:
+            self.manager.enforce_rapl()  # hold an active cap against thermald resets
+        except Exception:
+            pass
 
     async def _every(self, interval: float, fn: Callable[[], None]) -> None:
         loop = asyncio.get_running_loop()

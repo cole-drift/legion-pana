@@ -6,11 +6,11 @@ from ..hw.battery import Battery
 from ..hw.hid import HidTransport, RealHid
 from ..hw.lights import Lights
 from ..hw.platform_profile import PlatformProfile
-from ..hw.ppt import Ppt
+from ..hw.rapl import Rapl
 from ..hw.sensors import Sensors
 from ..hw.transport import RealSysfs, Sysfs
 from .config import Config, State
-from .presets import Preset, custom_tdp_preset, default_presets
+from .presets import Preset, default_presets
 
 
 def _safe(fn):
@@ -37,13 +37,15 @@ class Manager:
     ):
         self.fs = fs or RealSysfs()
         self.profile = PlatformProfile(self.fs)
-        self.ppt = Ppt(self.fs)
+        self.rapl = Rapl(self.fs)
         self.battery = Battery(self.fs)
         self.sensors = Sensors(self.fs)
         self.lights = Lights(self.fs, lights_opener or (lambda path: RealHid(path)))
         self.config = config or Config()
         self.state = state or State()
         self.presets = presets or default_presets()
+        # RAPL caps we want held (against thermald resets); None = don't enforce.
+        self._desired_rapl: dict | None = None
         if self.state.battery_target is None:
             self.state.battery_target = self.config.battery_target
         if self.state.mode is None:
@@ -59,17 +61,19 @@ class Manager:
     # ---- internal apply ----
 
     def _apply_preset(self, p: Preset) -> None:
-        if p.ppt:
-            # validate every limit BEFORE switching to custom, so a bad attr can't
-            # strand the machine in custom mode with a partially-applied limit.
-            bad = [a for a in p.ppt if not self.ppt.settable(a)]
-            if bad:
-                raise ValueError(f"ppt attrs not settable on this machine: {bad}")
-            self.profile.set("custom")
-            for attr, watts in p.ppt.items():
-                self.ppt.set(attr, watts)
-        else:
-            self.profile.set(p.platform_profile)
+        # platform_profile is cosmetic on this firmware (sets the power-button color
+        # but does NOT change power limits), so a hiccup here must not block the cap.
+        _safe(lambda: self.profile.set(p.platform_profile))
+        # the actual cooling lever: Intel RAPL package power cap.
+        if self.rapl.available():
+            if p.rapl_cap:
+                self.rapl.set_pl1_w(self.config.eco_pl1_w)
+                self.rapl.set_pl2_w(self.config.eco_pl2_w)
+                self._desired_rapl = {"pl1": self.config.eco_pl1_w, "pl2": self.config.eco_pl2_w}
+            else:
+                self.rapl.set_pl1_w(self.config.uncap_pl1_w)
+                self.rapl.set_pl2_w(self.config.uncap_pl2_w)
+                self._desired_rapl = None  # uncapped: let thermald manage, don't enforce
         if p.battery == "cap":
             self.battery.set_conservation(True)
         elif p.battery == "off":
@@ -97,10 +101,34 @@ class Manager:
     def set_tdp(self, pl1: int | None = None, pl2: int | None = None) -> dict:
         if pl1 is None and pl2 is None:
             raise ValueError("set_tdp needs at least one of pl1, pl2")
-        self._apply_preset(custom_tdp_preset(pl1, pl2))
+        if not self.rapl.available():
+            raise RuntimeError("RAPL power-cap not available on this machine")
+        desired = dict(self._desired_rapl or {})
+        if pl1 is not None:
+            desired["pl1"] = self.rapl.set_pl1_w(pl1)
+        if pl2 is not None:
+            desired["pl2"] = self.rapl.set_pl2_w(pl2)
+        self._desired_rapl = desired
         self.state.mode = "custom"
+        self.state.custom_pl1 = desired.get("pl1")
+        self.state.custom_pl2 = desired.get("pl2")
         self._persist()
         return self.status()
+
+    def enforce_rapl(self) -> None:
+        """Re-assert an active cap if thermald (or anything) raised the limit back up.
+
+        Only pushes the limit DOWN to the desired cap — never fights thermald when it
+        lowers the limit for thermal safety.
+        """
+        if not self._desired_rapl or not self.rapl.available():
+            return
+        cur = self.rapl.get_limits_w()
+        for key, setter in (("pl1", self.rapl.set_pl1_w), ("pl2", self.rapl.set_pl2_w)):
+            want = self._desired_rapl.get(key)
+            have = cur.get(key)
+            if want and have and have > want + 0.5:
+                _safe(lambda s=setter, w=want: s(w))
 
     def set_battery(
         self, *, cap: bool = False, target: int | None = None, off: bool = False
@@ -154,7 +182,15 @@ class Manager:
 
     def reapply(self) -> None:
         """Re-apply persisted desired state (boot / resume / AC change)."""
-        if self.state.mode and self.state.mode != "custom":
+        if self.state.mode == "custom":
+            if self.rapl.available():
+                desired: dict = {}
+                if self.state.custom_pl1:
+                    desired["pl1"] = _safe(lambda: self.rapl.set_pl1_w(self.state.custom_pl1))
+                if self.state.custom_pl2:
+                    desired["pl2"] = _safe(lambda: self.rapl.set_pl2_w(self.state.custom_pl2))
+                self._desired_rapl = {k: v for k, v in desired.items() if v} or None
+        elif self.state.mode:
             _safe(lambda: self._apply_preset(self.presets[self.state.mode]))
 
     # ---- read-only status ----
@@ -164,7 +200,11 @@ class Manager:
             "mode": self.state.mode,
             "platform_profile": _safe(self.profile.get) if self.profile.available() else None,
             "profile_choices": self.profile.choices(),
-            "ppt": {a: _safe(lambda a=a: self.ppt.get(a)) for a in self.ppt.attrs()},
+            "rapl": {
+                "available": self.rapl.available(),
+                "limits_w": self.rapl.get_limits_w() if self.rapl.available() else None,
+                "desired_w": self._desired_rapl,
+            },
             "battery": {
                 "conservation": self.battery.conservation(),
                 "soft_target": self.state.battery_target,

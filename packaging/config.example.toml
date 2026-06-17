@@ -14,6 +14,14 @@ default_mode = "balanced"
 # Keyboard backlight level used for "lights on" (0-9).
 light_on_brightness = 3
 
+# Cooling: eco mode caps CPU package power via Intel RAPL (the lever that actually
+# works on this machine; platform_profile alone does not change power). Watts.
+eco_pl1_w = 45.0      # sustained
+eco_pl2_w = 60.0      # boost
+# Stock limits restored for balanced/game (this machine's defaults).
+uncap_pl1_w = 115.0
+uncap_pl2_w = 168.0
+
 # Night schedule for the keyboard/perimeter lights.
 night_enabled = false
 night_start = "20:00"
