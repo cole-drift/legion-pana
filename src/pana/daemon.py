@@ -75,6 +75,7 @@ class Daemon:
             "status": self._h_status,
             "reapply": lambda a: (self.manager.reapply(), self.manager.status())[1],
             "monitor": lambda a: {"sample": self.monitor.latest()},
+            "lightkeys": lambda a: self.manager.enumerate_keys(),
             "mode": lambda a: self.manager.apply_mode(a["name"]),
             "power": lambda a: self.manager.set_power(a["pct"]),
             "battery": lambda a: self.manager.set_battery(
@@ -87,6 +88,7 @@ class Daemon:
                 effect=a.get("effect"),
                 zone=a.get("zone", "keyboard"),
                 logo=a.get("logo"),
+                keys=a.get("keys"),
             ),
             "night": lambda a: self.manager.set_night(
                 enabled=a.get("enabled"), clear_manual=a.get("clear", False),

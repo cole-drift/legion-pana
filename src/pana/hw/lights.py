@@ -119,15 +119,39 @@ class Lights:
     def _zone_keys(self, zone: str) -> list[int]:
         return spectrum.ZONES.get(zone, spectrum.KEYBOARD_KEYS)
 
-    def color(self, rgb: tuple[int, int, int], zone: str = "keyboard") -> None:
-        self._send(spectrum.static_color(rgb, self._zone_keys(zone), profile=self._profile()))
+    def _keys(self, zone: str, keycodes: list[int] | None) -> list[int]:
+        return keycodes if keycodes is not None else self._zone_keys(zone)
+
+    def enumerate_keys(self) -> dict:
+        """Ask the controller which LEDs it actually has (KeyCount 0xC4 + KeyPage 0xC5).
+
+        Returns {height, width, keycodes}. Reveals any LED not in the hardcoded tables
+        (e.g. a power-button LED that the Pro's keycode list doesn't include).
+        """
+        self.connect()
+        assert self._dev is not None
+        self._dev.send_feature(spectrum.keycount_request())
+        kc = self._dev.get_feature(spectrum.REPORT_SIZE, spectrum.REPORT_ID)
+        height, width = spectrum.parse_keycount_response(kc)
+        keys: list[int] = []
+        for y in range(max(1, min(height, 16))):
+            self._dev.send_feature(spectrum.keypage_request(y, 0x07))
+            keys += spectrum.parse_keypage_response(
+                self._dev.get_feature(spectrum.REPORT_SIZE, spectrum.REPORT_ID))
+        self._dev.send_feature(spectrum.keypage_request(0, 0x08))
+        keys += spectrum.parse_keypage_response(
+            self._dev.get_feature(spectrum.REPORT_SIZE, spectrum.REPORT_ID))
+        return {"height": height, "width": width, "keycodes": sorted(set(keys))}
+
+    def color(self, rgb, zone: str = "keyboard", keycodes: list[int] | None = None) -> None:
+        self._send(spectrum.static_color(rgb, self._keys(zone, keycodes), profile=self._profile()))
         if tuple(rgb) != (0, 0, 0):  # setting a zone to black = turn it off; don't relight
             self._ensure_lit()
 
-    def rainbow(self, speed: int = 2, zone: str = "keyboard") -> None:
-        self._send(spectrum.rainbow(self._zone_keys(zone), speed=speed, profile=self._profile()))
+    def rainbow(self, speed: int = 2, zone: str = "keyboard", keycodes: list[int] | None = None) -> None:
+        self._send(spectrum.rainbow(self._keys(zone, keycodes), speed=speed, profile=self._profile()))
         self._ensure_lit()
 
-    def breathe(self, rgb: tuple[int, int, int], speed: int = 2, zone: str = "keyboard") -> None:
-        self._send(spectrum.breathe(rgb, self._zone_keys(zone), speed=speed, profile=self._profile()))
+    def breathe(self, rgb, speed: int = 2, zone: str = "keyboard", keycodes: list[int] | None = None) -> None:
+        self._send(spectrum.breathe(rgb, self._keys(zone, keycodes), speed=speed, profile=self._profile()))
         self._ensure_lit()

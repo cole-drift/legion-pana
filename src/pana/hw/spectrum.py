@@ -106,13 +106,30 @@ def parse_profile_response(resp: bytes) -> int:
     return resp[4]
 
 
-def keycount_request() -> bytes:
-    return make_request(OP_KEYCOUNT)
+def keycount_request(param: int = 0x07) -> bytes:
+    return make_request(OP_KEYCOUNT, bytes([param]))
 
 
 def parse_keycount_response(resp: bytes) -> tuple[int, int]:
-    # (indexes/width, keys-per-index/height); byte offsets provisional, confirm live.
+    # (indexes / height, keys-per-index / width)
     return resp[5], resp[6]
+
+
+def keypage_request(index: int, param: int = 0x07) -> bytes:
+    return make_request(OP_KEYPAGE, bytes([param, index]))
+
+
+def parse_keypage_response(resp: bytes, count: int = 32) -> list[int]:
+    # items start at offset 6: each is {index:u8, keycode:u16-le} = 3 bytes. keycode>0 = a real LED.
+    keys: list[int] = []
+    for i in range(count):
+        off = 6 + i * 3
+        if off + 2 >= len(resp):
+            break
+        kc = resp[off + 1] | (resp[off + 2] << 8)
+        if kc:
+            keys.append(kc)
+    return keys
 
 
 def _effect_header(

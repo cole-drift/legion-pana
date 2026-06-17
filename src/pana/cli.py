@@ -21,7 +21,7 @@ def _hex_to_rgb(s: str) -> list[int]:
 
 def _build_request(args: argparse.Namespace) -> Request:
     c = args.cmd
-    if c in ("ping", "status", "reapply"):
+    if c in ("ping", "status", "reapply", "lightkeys"):
         return Request(cmd=c)
     if c == "mode":
         return Request(cmd="mode", args={"name": args.name})
@@ -49,8 +49,10 @@ def _build_request(args: argparse.Namespace) -> Request:
             a["zone"] = args.zone
         if args.logo:
             a["logo"] = args.logo == "on"
+        if args.raw:
+            a["keys"] = [int(k, 0) for k in args.raw.split(",")]
         if not a:
-            raise SystemExit("lights needs on|off|--brightness|--color|--effect|--zone|--logo")
+            raise SystemExit("lights needs on|off|--brightness|--color|--effect|--zone|--logo|--raw")
         return Request(cmd="lights", args=a)
     if c == "night":
         a = {}
@@ -103,6 +105,7 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser("ping")
     sub.add_parser("status")
     sub.add_parser("reapply")
+    sub.add_parser("lightkeys")  # dump the controller's actual LED keycode map
     mon = sub.add_parser("monitor")
     mon.add_argument("--interval", type=float, default=2.0)
     m = sub.add_parser("mode")
@@ -122,6 +125,7 @@ def _parser() -> argparse.ArgumentParser:
     li.add_argument("--zone", choices=["keyboard", "perimeter", "rear", "logo", "all"],
                     help="which LEDs --color/--effect apply to (rear = strip above keyboard)")
     li.add_argument("--logo", choices=["on", "off"], help="lid LEGION logo on/off")
+    li.add_argument("--raw", help="target explicit keycode(s) for --color, e.g. 0x05dd or 0x10,0x11")
     n = sub.add_parser("night")
     n.add_argument("state", nargs="?", choices=["on", "off", "clear"])
     n.add_argument("--start", help="night-window start HH:MM (e.g. 21:30)")

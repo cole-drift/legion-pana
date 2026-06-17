@@ -57,6 +57,25 @@ def test_c193_with_marker_is_allowed_as_fallback():
     assert Lights(fs, opener=lambda p: FakeHid()).candidates() == ["/dev/hidraw2"]
 
 
+def test_enumerate_keys_reports_controller_led_map():
+    kc = bytes([0x07, 0xC4, 0, 0, 0, 1, 1])                 # height=1, width=1
+    kp = bytes([0x07, 0xC5, 0, 0, 0, 0, 0x00, 0x10, 0x00])  # one LED: keycode 0x0010
+    dev = FakeHid({spectrum.OP_KEYCOUNT: kc, spectrum.OP_KEYPAGE: kp})
+    lights = Lights(_fs(), opener=lambda p: dev)
+    out = lights.enumerate_keys()
+    assert out["height"] == 1
+    assert 0x10 in out["keycodes"]
+
+
+def test_color_with_raw_keycodes_targets_them():
+    dev = FakeHid({spectrum.OP_GET_BRIGHTNESS: bytes([0x07, 0, 0, 0, 5])})
+    lights = Lights(_fs(), opener=lambda p: dev)
+    lights.color((0, 0, 255), keycodes=[0x05DD])
+    eff = next(s for s in dev.sent if s[1] == 0xCB)
+    assert eff[25] == 1                       # exactly one keycode
+    assert eff[26:28] == bytes([0xDD, 0x05])  # 0x05DD little-endian
+
+
 def test_no_effect_device_raises():
     fs = FakeSysfs(
         {"/sys/class/hidraw/hidraw2/device/uevent": _uevent("048D", "C193")},

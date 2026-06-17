@@ -33,6 +33,21 @@ def test_set_logo():
     assert s.set_logo(False)[4] == 0
 
 
+def test_parse_keypage_extracts_keycodes():
+    # items at offset 6: {index:u8, keycode:u16-le} = 3 bytes each; keycode 0 ignored
+    resp = bytes([0, 0, 0, 0, 0, 0,
+                  0x00, 0x10, 0x00,   # idx0 -> 0x0010
+                  0x01, 0xDD, 0x05,   # idx1 -> 0x05DD
+                  0x02, 0x00, 0x00])  # idx2 -> 0 (skip)
+    resp += b"\x00" * 40
+    assert s.parse_keypage_response(resp, count=3) == [0x0010, 0x05DD]
+
+
+def test_keycount_request_carries_param():
+    req = s.keycount_request()
+    assert req[:5] == bytes([0x07, 0xC4, 0xC0, 0x03, 0x07])
+
+
 def test_rainbow_effect_no_colors():
     req = s.rainbow()
     assert req[:4] == bytes([0x07, 0xCB, 0xC0, 0x03])

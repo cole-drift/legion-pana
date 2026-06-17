@@ -162,6 +162,7 @@ class Manager:
         effect: str | None = None,
         zone: str = "keyboard",
         logo: bool | None = None,
+        keys: list[int] | None = None,
     ) -> dict:
         if not self.lights.available():
             raise RuntimeError("no lighting device available")
@@ -169,21 +170,21 @@ class Manager:
         if logo is not None:
             self.lights.logo(logo)
 
-        # saved appearance is tracked for the keyboard zone only; other zones apply directly
-        track = zone == "keyboard"
+        # saved appearance tracked for the default keyboard zone only (not raw/zone writes)
+        track = zone == "keyboard" and keys is None
         appearance_changed = (effect is not None or color is not None) and track
         if effect == "rainbow":
-            self.lights.rainbow(zone=zone)
+            self.lights.rainbow(zone=zone, keycodes=keys)
             if track:
                 self.state.light_effect, self.state.light_color = "rainbow", None
         elif effect == "breathe":
             rgb = tuple(color) if color else tuple(self.state.light_color or (255, 255, 255))
-            self.lights.breathe(rgb, zone=zone)
+            self.lights.breathe(rgb, zone=zone, keycodes=keys)
             if track:
                 self.state.light_effect, self.state.light_color = "breathe", list(rgb)
         elif color is not None or effect == "static":
             rgb = tuple(color) if color else tuple(self.state.light_color or (255, 255, 255))
-            self.lights.color(rgb, zone=zone)
+            self.lights.color(rgb, zone=zone, keycodes=keys)
             if track:
                 self.state.light_effect, self.state.light_color = "static", list(rgb)
 
@@ -203,6 +204,11 @@ class Manager:
 
         self._persist()
         return self.status()
+
+    def enumerate_keys(self) -> dict:
+        if not self.lights.available():
+            raise RuntimeError("no lighting device available")
+        return self.lights.enumerate_keys()
 
     def scheduled_lights(self, on: bool) -> None:
         """Apply a schedule-driven on/off WITHOUT clobbering the saved appearance."""
