@@ -44,15 +44,52 @@ def test_apply_mode_eco_caps_clock_and_sets_battery_lights():
     assert dev.sent[-1][:5] == bytes([0x07, 0xCE, 0xC0, 0x03, 0])  # lights off
 
 
-def test_apply_mode_game_uncaps_clock():
+def test_apply_mode_performance_uncaps_clock():
     fs = _fs()
     m = Manager(fs=fs, lights_opener=_opener()[0])
     m.apply_mode("eco")                   # cap first
-    st = m.apply_mode("game")
+    st = m.apply_mode("performance")
     assert fs.read(d.PLATFORM_PROFILE) == "performance"
     assert fs.read(MAX_PERF_PCT) == "100"  # ceiling lifted
     assert fs.read(d.CONSERVATION) == "0"
     assert st["cpu_cap"]["desired_pct"] is None
+
+
+def test_game_alias_maps_to_performance():
+    m = _manager()
+    st = m.apply_mode("game")
+    assert st["mode"] == "performance"
+
+
+def test_set_lights_color_sets_static_effect_and_state():
+    fs = _fs()
+    dev = FakeHid({OP_GET_BRIGHTNESS: bytes([0x07, 0, 0, 0, 5])})
+    m = Manager(fs=fs, lights_opener=lambda p: dev)
+    st = m.set_lights(color=(255, 0, 128))
+    assert st["lights"]["effect"] == "static"
+    assert st["lights"]["color"] == [255, 0, 128]
+    # an EffectChange (0xCB) report was sent
+    assert any(s[1] == 0xCB for s in dev.sent)
+
+
+def test_set_lights_rainbow_clears_color():
+    fs = _fs()
+    dev = FakeHid({OP_GET_BRIGHTNESS: bytes([0x07, 0, 0, 0, 5])})
+    m = Manager(fs=fs, lights_opener=lambda p: dev)
+    m.set_lights(color=(255, 0, 0))
+    st = m.set_lights(effect="rainbow")
+    assert st["lights"]["effect"] == "rainbow"
+    assert st["lights"]["color"] is None
+
+
+def test_set_lights_off_then_on_tracks_brightness():
+    fs = _fs()
+    dev = FakeHid({OP_GET_BRIGHTNESS: bytes([0x07, 0, 0, 0, 5])})
+    m = Manager(fs=fs, lights_opener=lambda p: dev, config=Config(light_on_brightness=4))
+    assert m.set_lights(on=False)["lights"]["on"] is False
+    st = m.set_lights(on=True)
+    assert st["lights"]["on"] is True
+    assert st["lights"]["brightness"] == 4
 
 
 def test_apply_mode_unknown_raises():

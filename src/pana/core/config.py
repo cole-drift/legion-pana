@@ -57,6 +57,9 @@ class State:
     lights_manual: str | None = None  # "on"|"off" manual override of the schedule
     night_enabled: bool | None = None  # None = inherit Config.night_enabled
     custom_max_pct: int | None = None  # clock-ceiling cap for "custom" mode (pana power)
+    light_brightness: int | None = None  # last brightness pana set (None = unknown)
+    light_color: list | None = None      # last static [r,g,b] pana set
+    light_effect: str | None = None      # "static" | "rainbow" | "breathe"
 
     def to_json(self) -> str:
         return json.dumps(asdict(self))

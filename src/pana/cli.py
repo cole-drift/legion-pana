@@ -43,8 +43,10 @@ def _build_request(args: argparse.Namespace) -> Request:
             a["brightness"] = args.brightness
         if args.color:
             a["color"] = _hex_to_rgb(args.color)
+        if args.effect:
+            a["effect"] = args.effect
         if not a:
-            raise SystemExit("lights needs on|off|--brightness N|--color RRGGBB")
+            raise SystemExit("lights needs on|off|--brightness N|--color RRGGBB|--effect E")
         return Request(cmd="lights", args=a)
     if c == "night":
         if args.state == "clear":
@@ -100,7 +102,8 @@ def _parser() -> argparse.ArgumentParser:
     li = sub.add_parser("lights")
     li.add_argument("state", nargs="?", choices=["on", "off"])
     li.add_argument("--brightness", type=int, help="0-9")
-    li.add_argument("--color", help="RRGGBB hex")
+    li.add_argument("--color", help="RRGGBB hex (solid color)")
+    li.add_argument("--effect", choices=["static", "rainbow", "breathe"])
     n = sub.add_parser("night")
     n.add_argument("state", choices=["on", "off", "clear"])
     return p

@@ -25,6 +25,10 @@ def default_presets() -> dict[str, Preset]:
         # cooling), lights off, conservation on.
         "eco": Preset("eco", "low-power", eco_cap=True, lights="off", battery="cap"),
         "balanced": Preset("balanced", "balanced"),
-        # full performance, clock ceiling at 100%, lights on, charge to 100 for gaming.
-        "game": Preset("game", "performance", lights="on", battery="off"),
+        # full power: clock ceiling at 100%, lights on, charge to 100.
+        "performance": Preset("performance", "performance", lights="on", battery="off"),
     }
+
+
+# accepted aliases for mode names (muscle memory / old names)
+MODE_ALIASES = {"game": "performance"}

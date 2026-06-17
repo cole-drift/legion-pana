@@ -23,7 +23,12 @@ OP_SET_BRIGHTNESS = 0xCE
 OP_GET_LOGO = 0xA5
 OP_SET_LOGO = 0xA6
 
+EFFECT_RAINBOW_WAVE = 2
+EFFECT_COLOR_PULSE = 4  # "breathing"
 EFFECT_STATIC = 11  # "Always" / static color
+
+COLOR_MODE_NONE = 0
+COLOR_MODE_RANDOM = 1
 COLOR_MODE_LIST = 2
 
 # "all lights" pseudo-keycode (whole keyboard); per legion-spectrum-control.
@@ -78,15 +83,42 @@ def _effect_header(
     )
 
 
-def static_color(rgb: tuple[int, int, int], keycodes: list[int], profile: int = 0) -> bytes:
-    """Build an EffectChange request painting `keycodes` a single static `rgb`."""
-    r, g, b = rgb
+def build_effect(
+    effect_type: int,
+    colors: list[tuple[int, int, int]] | None = None,
+    keycodes: list[int] | None = None,
+    *,
+    speed: int = 1,
+    clockwise: int = 0,
+    direction: int = 1,
+    color_mode: int | None = None,
+    profile: int = 0,
+) -> bytes:
+    """Build an EffectChange (0xCB) request for an arbitrary effect/colors/zone."""
+    colors = colors or []
+    keycodes = keycodes if keycodes is not None else [KEYCODE_ALL]
+    if color_mode is None:
+        color_mode = COLOR_MODE_LIST if colors else COLOR_MODE_RANDOM
     blob = bytes([1])  # effect number
-    blob += _effect_header()
-    blob += bytes([1])  # num colors
-    blob += bytes([r, g, b])
+    blob += _effect_header(effect_type, speed, clockwise, direction, color_mode)
+    blob += bytes([len(colors)])
+    for r, g, b in colors:
+        blob += bytes([r, g, b])
     blob += bytes([len(keycodes)])
     for kc in keycodes:
         blob += struct.pack("<H", kc)
     payload = bytes([profile, 0x01, 0x01]) + blob
     return make_request(OP_EFFECT_CHANGE, payload)
+
+
+def static_color(rgb: tuple[int, int, int], keycodes: list[int] | None = None) -> bytes:
+    return build_effect(EFFECT_STATIC, colors=[rgb], keycodes=keycodes)
+
+
+def rainbow(keycodes: list[int] | None = None, speed: int = 1) -> bytes:
+    return build_effect(EFFECT_RAINBOW_WAVE, keycodes=keycodes, speed=speed,
+                        color_mode=COLOR_MODE_RANDOM)
+
+
+def breathe(rgb: tuple[int, int, int], keycodes: list[int] | None = None, speed: int = 1) -> bytes:
+    return build_effect(EFFECT_COLOR_PULSE, colors=[rgb], keycodes=keycodes, speed=speed)

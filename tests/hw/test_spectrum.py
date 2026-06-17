@@ -33,6 +33,23 @@ def test_set_logo():
     assert s.set_logo(False)[4] == 0
 
 
+def test_rainbow_effect_no_colors():
+    req = s.rainbow()
+    assert req[:4] == bytes([0x07, 0xCB, 0xC0, 0x03])
+    body = req[4:]
+    assert body[0:3] == bytes([0x00, 0x01, 0x01])
+    assert body[3] == 1                              # effect number
+    assert body[4:7] == bytes([0x06, 0x01, s.EFFECT_RAINBOW_WAVE])
+    assert body[17] == 0                             # num colors (random)
+
+
+def test_breathe_effect_one_color():
+    body = s.breathe((10, 20, 30))[4:]
+    assert body[4:7] == bytes([0x06, 0x01, s.EFFECT_COLOR_PULSE])
+    assert body[17] == 1                             # num colors
+    assert body[18:21] == bytes([10, 20, 30])
+
+
 def test_static_color_layout():
     req = s.static_color((255, 0, 128), [s.KEYCODE_ALL])
     assert req[:4] == bytes([0x07, 0xCB, 0xC0, 0x03])

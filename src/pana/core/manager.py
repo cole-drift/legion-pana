@@ -10,7 +10,7 @@ from ..hw.platform_profile import PlatformProfile
 from ..hw.sensors import Sensors
 from ..hw.transport import RealSysfs, Sysfs
 from .config import Config, State
-from .presets import Preset, default_presets
+from .presets import MODE_ALIASES, Preset, default_presets
 
 
 def _safe(fn):
@@ -89,6 +89,7 @@ class Manager:
     # ---- operations ----
 
     def apply_mode(self, name: str) -> dict:
+        name = MODE_ALIASES.get(name, name)
         p = self.presets.get(name)
         if p is None:
             raise ValueError(f"unknown mode: {name}")
@@ -143,22 +144,36 @@ class Manager:
         on: bool | None = None,
         brightness: int | None = None,
         color: tuple[int, int, int] | None = None,
+        effect: str | None = None,
     ) -> dict:
         if not self.lights.available():
             raise RuntimeError("no lighting device available")
-        if color is not None:
-            self.lights.color(color)
-        if on is True:
-            # an explicit brightness on this invocation wins over the config default
-            self.lights.set_brightness(
-                brightness if brightness is not None else self.config.light_on_brightness
-            )
-            self.state.lights_manual = "on"
-        elif on is False:
+
+        # 1) effect / color (a bare color implies a static effect)
+        if effect == "rainbow":
+            self.lights.rainbow()
+            self.state.light_effect, self.state.light_color = "rainbow", None
+        elif effect == "breathe":
+            rgb = tuple(color) if color else tuple(self.state.light_color or (255, 255, 255))
+            self.lights.breathe(rgb)
+            self.state.light_effect, self.state.light_color = "breathe", list(rgb)
+        elif color is not None or effect == "static":
+            rgb = tuple(color) if color else tuple(self.state.light_color or (255, 255, 255))
+            self.lights.color(rgb)
+            self.state.light_effect, self.state.light_color = "static", list(rgb)
+
+        # 2) brightness / on / off
+        if on is False:
             self.lights.off()
-            self.state.lights_manual = "off"
+            self.state.light_brightness, self.state.lights_manual = 0, "off"
+        elif on is True:
+            b = brightness if brightness is not None else (self.state.light_brightness or self.config.light_on_brightness)
+            self.lights.set_brightness(b)
+            self.state.light_brightness, self.state.lights_manual = b, "on"
         elif brightness is not None:
             self.lights.set_brightness(brightness)
+            self.state.light_brightness = brightness
+
         self._persist()
         return self.status()
 
@@ -212,5 +227,9 @@ class Manager:
                 "available": self.lights.available(),
                 "manual": self.state.lights_manual,
                 "night_enabled": self.night_enabled(),
+                "brightness": self.state.light_brightness,
+                "color": self.state.light_color,
+                "effect": self.state.light_effect,
+                "on": (self.state.light_brightness or 0) > 0,
             },
         }

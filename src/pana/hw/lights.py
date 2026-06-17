@@ -86,5 +86,10 @@ class Lights:
         self._send(spectrum.set_logo(on))
 
     def color(self, rgb: tuple[int, int, int], keycodes: list[int] | None = None) -> None:
-        keys = keycodes if keycodes is not None else [spectrum.KEYCODE_ALL]
-        self._send(spectrum.static_color(rgb, keys))
+        self._send(spectrum.static_color(rgb, keycodes))
+
+    def rainbow(self, speed: int = 1) -> None:
+        self._send(spectrum.rainbow(speed=speed))
+
+    def breathe(self, rgb: tuple[int, int, int], speed: int = 1) -> None:
+        self._send(spectrum.breathe(rgb, speed=speed))
