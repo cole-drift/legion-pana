@@ -1,7 +1,6 @@
 # legion-pana (`pana`)
 
-A personal control + monitoring tool for the **Lenovo Legion 7 16IAX10**, tuned
-for off-grid / hot-climate / solar use. Pure-Python, no kernel module.
+A personal control + monitoring tool for the **Lenovo Legion 7 16IAX10**. Pure-Python, no kernel module.
 
 - **Modes (CPU clock ladder)**: `pana mode eco` (50%) · `balanced` (80%) · `performance` (100%); `pana power 65` for a custom cap. Battery/lights are *not* bundled into modes.
 - **Battery**: `pana battery --cap` (firmware cap) / `--limit 85` (soft target) / `--off`
