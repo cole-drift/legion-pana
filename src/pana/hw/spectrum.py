@@ -31,8 +31,27 @@ COLOR_MODE_NONE = 0
 COLOR_MODE_RANDOM = 1
 COLOR_MODE_LIST = 2
 
-# "all lights" pseudo-keycode (whole keyboard); per legion-spectrum-control.
+# "all lights" pseudo-keycode — reserved for AudioBounce/AudioRipple/AuroraSync ONLY;
+# static/rainbow/breathe must enumerate the real per-key codes below, or nothing lights.
 KEYCODE_ALL = 0x0065
+
+# Real per-key keycodes for the Legion 7/Pro 7 16IAX10(H) keyboard, from the proven
+# legion-spectrum-control tool. Static/breathe/wave effects address THIS set.
+KEYBOARD_KEYS = [
+    0x0001, 0x0002, 0x0003, 0x0004, 0x0005, 0x0006, 0x0007, 0x0008,
+    0x0009, 0x000A, 0x000B, 0x000C, 0x000D, 0x000E, 0x000F, 0x0010,
+    0x0011, 0x0012, 0x0013, 0x0014, 0x0016, 0x0017, 0x0018, 0x0019,
+    0x001A, 0x001B, 0x001C, 0x001D, 0x001E, 0x001F, 0x0020, 0x0021,
+    0x0022, 0x0026, 0x0027, 0x0028, 0x0029, 0x0038, 0x0040, 0x0042,
+    0x0043, 0x0044, 0x0045, 0x0046, 0x0047, 0x0048, 0x0049, 0x004A,
+    0x004B, 0x004C, 0x004D, 0x004E, 0x004F, 0x0050, 0x0051, 0x0055,
+    0x0058, 0x0059, 0x005A, 0x005B, 0x005C, 0x005D, 0x005F, 0x0068,
+    0x006A, 0x006D, 0x006E, 0x006F, 0x0070, 0x0071, 0x0072, 0x0073,
+    0x0074, 0x0075, 0x0076, 0x0077, 0x0079, 0x007B, 0x007C, 0x007F,
+    0x0080, 0x0082, 0x0083, 0x0087, 0x0088, 0x008D, 0x008E, 0x0090,
+    0x0092, 0x0096, 0x0097, 0x0098, 0x009A, 0x009B, 0x009C, 0x009D,
+    0x009F, 0x00A1, 0x00A3, 0x00A5, 0x00A7,
+]
 
 
 def make_request(op: int, payload: bytes = b"") -> bytes:
@@ -59,6 +78,14 @@ def parse_brightness_response(resp: bytes) -> int:
 
 def set_logo(on: bool) -> bytes:
     return make_request(OP_SET_LOGO, bytes([1 if on else 0]))
+
+
+def get_profile_request() -> bytes:
+    return make_request(OP_PROFILE_GET)
+
+
+def parse_profile_response(resp: bytes) -> int:
+    return resp[4]
 
 
 def keycount_request() -> bytes:
@@ -88,17 +115,25 @@ def build_effect(
     colors: list[tuple[int, int, int]] | None = None,
     keycodes: list[int] | None = None,
     *,
-    speed: int = 1,
+    speed: int = 0,
     clockwise: int = 0,
-    direction: int = 1,
+    direction: int = 0,
     color_mode: int | None = None,
     profile: int = 0,
 ) -> bytes:
-    """Build an EffectChange (0xCB) request for an arbitrary effect/colors/zone."""
+    """Build an EffectChange (0xCB) request for an arbitrary effect/colors/zone.
+
+    Defaults to the enumerated KEYBOARD_KEYS — addressing only KEYCODE_ALL (0x65) does
+    NOT light anything for static/wave/breathe (that pseudo-code is audio-effects only).
+    `profile` must be the device's CURRENT profile (read via get_profile_request).
+    """
     colors = colors or []
-    keycodes = keycodes if keycodes is not None else [KEYCODE_ALL]
+    keycodes = keycodes if keycodes is not None else KEYBOARD_KEYS
     if color_mode is None:
-        color_mode = COLOR_MODE_LIST if colors else COLOR_MODE_RANDOM
+        color_mode = (
+            COLOR_MODE_LIST if colors
+            else (COLOR_MODE_RANDOM if effect_type != EFFECT_STATIC else COLOR_MODE_NONE)
+        )
     blob = bytes([1])  # effect number
     blob += _effect_header(effect_type, speed, clockwise, direction, color_mode)
     blob += bytes([len(colors)])
@@ -111,14 +146,16 @@ def build_effect(
     return make_request(OP_EFFECT_CHANGE, payload)
 
 
-def static_color(rgb: tuple[int, int, int], keycodes: list[int] | None = None) -> bytes:
-    return build_effect(EFFECT_STATIC, colors=[rgb], keycodes=keycodes)
+def static_color(rgb: tuple[int, int, int], keycodes: list[int] | None = None, *, profile: int = 0) -> bytes:
+    return build_effect(EFFECT_STATIC, colors=[rgb], keycodes=keycodes,
+                        color_mode=COLOR_MODE_LIST, profile=profile)
 
 
-def rainbow(keycodes: list[int] | None = None, speed: int = 1) -> bytes:
+def rainbow(keycodes: list[int] | None = None, *, speed: int = 2, direction: int = 4, profile: int = 0) -> bytes:
     return build_effect(EFFECT_RAINBOW_WAVE, keycodes=keycodes, speed=speed,
-                        color_mode=COLOR_MODE_RANDOM)
+                        direction=direction, color_mode=COLOR_MODE_RANDOM, profile=profile)
 
 
-def breathe(rgb: tuple[int, int, int], keycodes: list[int] | None = None, speed: int = 1) -> bytes:
-    return build_effect(EFFECT_COLOR_PULSE, colors=[rgb], keycodes=keycodes, speed=speed)
+def breathe(rgb: tuple[int, int, int], keycodes: list[int] | None = None, *, speed: int = 2, profile: int = 0) -> bytes:
+    return build_effect(EFFECT_COLOR_PULSE, colors=[rgb], keycodes=keycodes, speed=speed,
+                        color_mode=COLOR_MODE_LIST, profile=profile)
