@@ -1,5 +1,17 @@
 # Power-button LED — research notes (experimental branch, NOT in releases)
 
+> ⚠️ **EXPERIMENTAL — READ BEFORE RUNNING ANYTHING HERE.**
+>
+> This branch pokes **raw embedded-controller (EC) memory** on one specific laptop:
+> Lenovo Legion 7 **16IAX10** (DMI `83KY`, BIOS `RXCN27WW`). Every address, WMI method,
+> and byte offset below is **firmware-specific to this exact model + BIOS revision**.
+> On any other machine the same offsets may mean nothing — or land on **fan, charging,
+> or thermal** controls.
+>
+> Writing the wrong EC byte can cause data loss, thermal/charging misbehaviour, or a
+> bricked controller. **None of this is in the released `pana` tool**, and it is not
+> portable. Use only on an identical unit, and entirely at your own risk.
+
 Goal: turn off / dim the **power-button LED** above the keyboard on the Legion 7
 16IAX10 (83KY). It tracks the power mode (color) and has no documented "off".
 

@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# ⚠️  EXPERIMENTAL — raw EC memory writes, Lenovo Legion 7 16IAX10 (83KY / BIOS RXCN27WW) ONLY.
+#     These addresses are firmware-specific; on any other model the same offsets may land on
+#     fan, charging, or thermal controls and can cause data loss or a bricked EC. Not part of
+#     the released `pana` tool. Use only on an identical unit, entirely at your own risk.
 # Probe/poke the EC memory-mapped brightness fields (ERAX @ 0xFE500400) via busybox devmem.
 #   PCBV @ 0xFE500440 (16-bit), PCBS @ 0xFE500442 (8-bit), SPBL = bit7 of 0xFE50043F.
 # Usage (as root):
