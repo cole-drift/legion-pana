@@ -29,7 +29,40 @@ LIGHT_COLORS = [
 LIGHT_EFFECTS = [("Static color", "static"), ("Rainbow", "rainbow"), ("Breathing", "breathe")]
 
 
-def _title(status: dict) -> str:
+class TempTrend:
+    """Rolling CPU-temp tracker for the tray's live label.
+
+    A short-window mean gives a steady reading instead of a flickering snapshot;
+    a longer-window max gives a 'recent peak' so a brief spike stays visible.
+    Timestamps (monotonic seconds) are passed in, so this stays pure + testable.
+    """
+
+    def __init__(self, smooth_s: float = 2.0, peak_s: float = 60.0):
+        self.smooth_s = smooth_s
+        self.peak_s = peak_s
+        self._samples: list[tuple[float, float]] = []
+
+    def add(self, ts: float, temp: float | None) -> None:
+        if temp is None:
+            return
+        self._samples.append((ts, temp))
+        cutoff = ts - self.peak_s
+        self._samples = [(t, v) for t, v in self._samples if t >= cutoff]
+
+    def smoothed(self) -> float | None:
+        if not self._samples:
+            return None
+        latest = self._samples[-1][0]
+        window = [v for t, v in self._samples if t >= latest - self.smooth_s]
+        return round(sum(window) / len(window), 1) if window else None
+
+    def peak(self) -> float | None:
+        if not self._samples:
+            return None
+        return max(v for _, v in self._samples)
+
+
+def _title(status: dict, temp_c: float | None = None, peak_c: float | None = None) -> str:
     bat = status.get("battery") or {}
     mon = status.get("monitor") or {}
     cap = (status.get("cpu_cap") or {}).get("max_perf_pct")
@@ -38,8 +71,12 @@ def _title(status: dict) -> str:
         parts.append(f"CPU {cap}%")
     if bat.get("capacity") is not None:
         parts.append(f"{bat['capacity']}%")
-    if mon.get("cpu_temp_c") is not None:
-        parts.append(f"{mon['cpu_temp_c']:g}°C")
+    t = temp_c if temp_c is not None else mon.get("cpu_temp_c")
+    if t is not None:
+        tok = f"{t:g}°C"
+        if peak_c is not None:
+            tok += f" (pk {peak_c:g}°)"
+        parts.append(tok)
     if mon.get("cpu_power_w") is not None:
         parts.append(f"{mon['cpu_power_w']:g}W")
     return "  ·  ".join(parts)
@@ -133,8 +170,16 @@ def _fetch_status(socket: str) -> dict:
 
 
 def run(socket: str = DEFAULT_SOCKET) -> None:  # pragma: no cover - GUI glue
+    import threading
+    import time
+
     import pystray
     from PIL import Image, ImageDraw
+
+    try:
+        from gi.repository import GLib
+    except Exception:  # noqa: BLE001 - non-GTK backend: live label updates disabled
+        GLib = None
 
     def icon_image() -> "Image.Image":
         img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
@@ -142,9 +187,17 @@ def run(socket: str = DEFAULT_SOCKET) -> None:  # pragma: no cover - GUI glue
         return img
 
     cache = {"status": _fetch_status(socket)}
+    trend = TempTrend()
+    stop = threading.Event()
 
     def refresh() -> None:
         cache["status"] = _fetch_status(socket)
+
+    def live_title() -> str:
+        st = cache["status"]
+        mon = st.get("monitor") or {}
+        trend.add(time.monotonic(), mon.get("cpu_temp_c"))
+        return _title(st, temp_c=trend.smoothed(), peak_c=trend.peak())
 
     def to_items(model):
         out = []
@@ -157,7 +210,7 @@ def run(socket: str = DEFAULT_SOCKET) -> None:  # pragma: no cover - GUI glue
             elif kind == "submenu":
                 out.append(pystray.MenuItem(it["text"], pystray.Menu(*to_items(it["items"]))))
             elif it.get("action") == "quit":
-                out.append(pystray.MenuItem(it["text"], lambda ic, item: ic.stop()))
+                out.append(pystray.MenuItem(it["text"], lambda ic, item: (stop.set(), ic.stop())))
             elif it.get("action") == "refresh":
                 out.append(pystray.MenuItem(it["text"], lambda ic, item: rebuild(ic)))
             else:
@@ -182,15 +235,39 @@ def run(socket: str = DEFAULT_SOCKET) -> None:  # pragma: no cover - GUI glue
         _send(socket, cmd, args)
         rebuild(ic)
 
+    def update_label() -> bool:
+        # Edit ONLY the top label's text in place. dbusmenu pushes that single
+        # property change to GNOME without recreating the menu, so the telemetry
+        # ticks live even while the menu is open and no open submenu collapses.
+        # (Rebuilding the whole menu on a timer is what used to kick you out.)
+        h = getattr(icon, "_menu_handle", None)
+        if h is not None:
+            kids = h.get_children()
+            if kids:
+                try:
+                    kids[0].set_label(live_title())
+                except Exception:
+                    pass
+        return False  # one-shot GLib idle callback
+
+    def live_loop(ic) -> None:
+        # pystray runs setup in a worker thread once the icon is ready; a custom
+        # setup replaces the default, so we flip visibility on ourselves.
+        ic.visible = True
+        while not stop.wait(1.0):
+            refresh()
+            if GLib is not None:
+                GLib.idle_add(update_label)  # marshal the GTK call onto the main loop
+
     icon = pystray.Icon("pana", icon_image(), "pana", menu=build())
-    # NO background timer: rebuilding/refreshing the menu while it's open collapses
-    # any open submenu on GNOME's AppIndicator (the "blink" that kicked you out).
-    # The menu refreshes only on a click (when it's already closed) or via "Refresh".
+    # Telemetry in the top label refreshes live (1s) by editing that one item in
+    # place — never by rebuilding the menu (that collapsed open submenus). The rest
+    # of the menu still rebuilds only on a click or "Refresh", when it's closing.
     try:
         icon.title = _title(cache["status"])
     except Exception:
         pass
-    icon.run()
+    icon.run(setup=live_loop)
 
 
 def main() -> None:

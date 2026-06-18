@@ -1,4 +1,4 @@
-from pana.tray import MODES, menu_model
+from pana.tray import MODES, TempTrend, _title, menu_model
 
 
 def _status(**over):
@@ -115,3 +115,50 @@ def test_night_submenu_has_enable_and_window_presets():
     # the current window preset is checked
     win = _find(model, cmd="night", args={"start": "22:00", "end": "06:00"})
     assert win["checked"] is True
+
+
+# --- live telemetry: smoothing + peak (the tray's in-place label updates) ---
+
+def test_temptrend_empty_is_none():
+    tr = TempTrend()
+    assert tr.smoothed() is None
+    assert tr.peak() is None
+
+
+def test_temptrend_smoothes_over_short_window_only():
+    tr = TempTrend(smooth_s=2.0, peak_s=60.0)
+    tr.add(0.0, 50.0)   # outside the 2s smooth window relative to latest (10.0)
+    tr.add(9.0, 60.0)   # inside
+    tr.add(10.0, 70.0)  # inside (latest)
+    # smoothed averages only samples with ts >= 10.0 - 2.0 = 8.0  -> mean(60,70)=65
+    assert tr.smoothed() == 65.0
+
+
+def test_temptrend_peak_is_max_over_peak_window():
+    tr = TempTrend(smooth_s=2.0, peak_s=60.0)
+    tr.add(0.0, 80.0)    # peak within 60s window of latest? latest=70 -> cutoff 10 -> dropped
+    tr.add(70.0, 55.0)
+    tr.add(71.0, 58.0)
+    # 80.0 sample (ts=0) is older than 71-60=11 -> evicted; peak over remaining = 58
+    assert tr.peak() == 58.0
+
+
+def test_temptrend_ignores_none_samples():
+    tr = TempTrend()
+    tr.add(1.0, None)
+    tr.add(2.0, 50.0)
+    assert tr.smoothed() == 50.0
+
+
+def test_title_uses_temp_and_peak_overrides():
+    st = {"mode": "eco", "cpu_cap": {"max_perf_pct": 50},
+          "battery": {"capacity": 40}, "monitor": {"cpu_temp_c": 99.0}}
+    title = _title(st, temp_c=51.3, peak_c=68.0)
+    assert "51.3" in title          # uses the override, not the raw 99.0
+    assert "99" not in title
+    assert "68" in title            # peak shown
+
+
+def test_title_without_overrides_uses_monitor_value():
+    st = {"mode": "eco", "monitor": {"cpu_temp_c": 60.0}}
+    assert "60" in _title(st)
